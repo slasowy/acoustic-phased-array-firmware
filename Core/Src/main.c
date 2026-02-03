@@ -68,7 +68,7 @@ static void MX_TIM8_Init(void);
 /* USER CODE END PD */
 /* USER CODE BEGIN PV */
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
-uint32_t *uhADCxConvertedData = (uint32_t *)0x24000000; // Non-cacheable SRAM address
+uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((section(".adc_ram"))); // Place buffer in non-cacheable SRAM
 /* USER CODE END PV */
 /* USER CODE BEGIN PFP */
 static void MPU_AdjustRegionAddressSize(uint32_t Address, uint32_t Size, MPU_Region_InitTypeDef* pInit);
@@ -132,7 +132,7 @@ int main(void)
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
-  HAL_ADC_Start_DMA(&hadc1, uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
   //HAL_ADC_Start(&hadc1);
   //HAL_TIM_Base_Start(&htim8);
   /* USER CODE END 2 */
@@ -142,8 +142,8 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-    uint16_t data = *uhADCxConvertedData;
-
+    uint16_t data = uhADCxConvertedData[0]; // Access first element of the ADC data buffer
+    uint16_t data_last = uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE + 1];
     /* USER CODE BEGIN 3 */
     // Add processing here if needed, e.g., check for adc_data_ready flag
   }
