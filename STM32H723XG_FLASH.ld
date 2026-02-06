@@ -62,8 +62,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
 DTCMRAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-ADC_RAM (xrw)      : ORIGIN = 0x24000000, LENGTH = 8K
-RAM (xrw)      : ORIGIN = 0x21F40, LENGTH = 120K
+RAM (xrw)      : ORIGIN = 0x24000000, LENGTH = 128K
 RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K
 RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K
 ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
@@ -80,12 +79,6 @@ SECTIONS
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
-  .adc_ram :
-  {
-    . = ALIGN(4);
-    *(.adc_ram)        /* ADC RAM sections */
-    . = ALIGN(4);
-  } >ADC_RAM
 
   /* The program code and other data goes into FLASH */
   .text :
@@ -204,7 +197,17 @@ SECTIONS
   } >DTCMRAM
 
 
-
+    .lwip_sec (NOLOAD) : {
+    . = ABSOLUTE(0x30000000);
+    *(.RxDecripSection) 
+    
+    . = ABSOLUTE(0x30000080);
+    *(.TxDecripSection)
+    
+    . = ABSOLUTE(0x30000100);
+    *(.Rx_PoolSection) 
+  } >RAM_D2
+  
   /* Remove information from the standard libraries */
   /DISCARD/ :
   {

@@ -18,6 +18,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <string.h>
+#include "ethernetif.h"
+#include "lwip.h"
+#include "stm32h7xx_hal.h"
+#include "tcpClientRAW.h"
+#include "timeouts.h"
+
+struct netif gnetif2;
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -45,6 +53,7 @@ DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim8;
 
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -63,13 +72,16 @@ static void MX_TIM8_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #define ADC_CONVERTED_DATA_BUFFER_SIZE 64
+
+extern struct netif gnetif;
+
 /* USER CODE END PD */
 /* USER CODE BEGIN PV */
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
-uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((section(".adc_ram"))); // Place buffer in non-cacheable SRAM
+uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
 /* USER CODE END PV */
 /* USER CODE BEGIN PFP */
-static void MPU_AdjustRegionAddressSize(uint32_t Address, uint32_t Size, MPU_Region_InitTypeDef* pInit);
+
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 }
 void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc){
@@ -117,8 +129,8 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM8_Init();
+  MX_LWIP_Init();
   /* USER CODE BEGIN 2 */
-  
   __HAL_TIM_ENABLE_IT(&htim8, TIM_IT_UPDATE);
 
   // filepath: Core/Src/main.c
@@ -141,16 +153,34 @@ int main(void)
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
+  
+  tcp_client_init();
+  HAL_Delay(2000);
+
+  
+  //HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
   //HAL_ADC_Start(&hadc1);
   //HAL_TIM_Base_Start(&htim8);
+
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t startTick = HAL_GetTick();
   while (1)
   {
-    uint16_t adc_value = uhADCxConvertedData[0];
+    //uint16_t adc_value = uhADCxConvertedData[0];
+    //MX_LWIP_Process();
+    ethernetif_input(&gnetif);
+    sys_check_timeouts();
+    if(HAL_GetTick() - startTick >= 1000)
+    {
+        startTick = HAL_GetTick();
+        send_it();
+
+        // Do something every 1 second
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -357,8 +387,11 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -391,6 +424,17 @@ void MPU_Config(void)
   MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
   MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+  /** Initializes and configures the Region and the memory to be protected
+  */
+  MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+  MPU_InitStruct.BaseAddress = 0x30000000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_32KB;
+  MPU_InitStruct.SubRegionDisable = 0x0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
 
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
