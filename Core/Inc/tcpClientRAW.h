@@ -18,11 +18,11 @@
   ***************************************************************************************************************
 */
 
-
+#include "stdint.h"
 #ifndef INC_TCPCLIENTRAW_H_
 #define INC_TCPCLIENTRAW_H_
 
 void tcp_client_init(void);
-void send_it(void);
+void send_it(int16_t* number, uint16_t len);
 
 #endif /* INC_TCPCLIENTRAW_H_ */

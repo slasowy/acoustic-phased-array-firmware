@@ -115,22 +115,20 @@ struct tcp_client_struct *esTx = 0;
 
 struct tcp_pcb *pcbTx = 0;
 
-void send_it()
+void send_it(int16_t* data, uint16_t len)
 {
-	char buf[100];
+	len = len * sizeof(int16_t); // Convert length from number of int16_t to number of bytes
 
 	/* Prepare the first message to send to the server */
-	int len = sprintf (buf, "Sending TCPclient Message %d\n", counter);
 
-	if (counter !=0)
+	if (len !=0)
 	{
 		/* allocate pbuf */
 		esTx->p = pbuf_alloc(PBUF_TRANSPORT, len , PBUF_POOL);
 
 
 		/* copy data to pbuf */
-		pbuf_take(esTx->p, (char*)buf, len);
-
+		pbuf_take(esTx->p, (char*)data, len);
 		tcp_client_send(pcbTx, esTx);
 
 		pbuf_free(esTx->p);

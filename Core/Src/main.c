@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include <string.h>
+#include <sys/types.h>
 #include "ethernetif.h"
 #include "lwip.h"
 #include "stm32h7xx_hal.h"
-#include "tcpClientRAW.h"
+//#include "tcpClientRAW.h"
+#include "udpServerRAW.h"
 #include "timeouts.h"
 
 struct netif gnetif2;
@@ -154,8 +156,9 @@ int main(void)
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
   
-  tcp_client_init();
-  HAL_Delay(2000);
+  //tcp_client_init();
+  udpServer_init();
+  HAL_Delay(1000);
 
   
   //HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
@@ -168,18 +171,26 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t startTick = HAL_GetTick();
+  int16_t count = 0;
+
+  uint16_t data[1000];
+  for(int i = 0; i < 1000; i++){
+    data[i] = 112;
+  }
+  data[999] = 0; // Null terminate the array
   while (1)
   {
     //uint16_t adc_value = uhADCxConvertedData[0];
     //MX_LWIP_Process();
     ethernetif_input(&gnetif);
     sys_check_timeouts();
-    if(HAL_GetTick() - startTick >= 1000)
+    if(HAL_GetTick() - startTick >= 10 && count < 1000)
     {
         startTick = HAL_GetTick();
-        send_it();
-
-        // Do something every 1 second
+        udp_transmit(data, 1000);
+      }
+    if(count >= 1000){
+        HAL_Delay(1000);
     }
     /* USER CODE END WHILE */
 
