@@ -23,7 +23,7 @@
 #define INC_UDPCLIENTRAW_H_
 
 
-
+void udpClient_send(int16_t* data, uint16_t len);
 void udpClient_connect(void);
 
 #endif /* INC_UDPCLIENTRAW_H_ */

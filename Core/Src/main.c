@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include "ethernetif.h"
 #include "lwip.h"
+#include "stm32h723xx.h"
 #include "stm32h7xx_hal.h"
 //#include "tcpClientRAW.h"
 #include "udpServerRAW.h"
@@ -106,11 +107,10 @@ int main(void)
   /* USER CODE BEGIN 1 */
   /* USER CODE END 1 */
 
-  /* MPU Configuration--------------------------------------------------------*/
-  MPU_Config();
+  /* MPU Configuration--------------------------------------------------------*  MPU_Config();
 
   /* Enable the CPU Cache */
-
+  MPU_Config();
   /* Enable I-Cache---------------------------------------------------------*/
   SCB_EnableICache();
 
@@ -177,7 +177,7 @@ int main(void)
   uint32_t startTick = HAL_GetTick();
   int16_t count = 0;
 
-  uint16_t data[1000];
+  int16_t data[1000];
   for(int i = 0; i < 1000; i++){
     data[i] = 112;
   }
@@ -191,10 +191,8 @@ int main(void)
     if(HAL_GetTick() - startTick >= 10 && count < 1000)
     {
         startTick = HAL_GetTick();
+        udpClient_send(data, 1000);
       }
-    if(count >= 1000){
-        HAL_Delay(1000);
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

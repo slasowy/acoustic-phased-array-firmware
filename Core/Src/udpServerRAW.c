@@ -25,12 +25,12 @@
 
 #include "stdio.h"
 #include "string.h"
+#include <stdint.h>
 
 #include "udpServerRAW.h"
 
 
 void udp_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p, const ip_addr_t *addr, u16_t port);
-static void udpClient_send(void);
 
 struct udp_pcb *upcb;
 char buffer[100];
@@ -38,13 +38,13 @@ int cnt = 0;
 
 extern TIM_HandleTypeDef htim3;
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  if(htim->Instance == TIM3)
-  {
-    udpClient_send();
-  }
-}
+// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+// {
+//   if(htim->Instance == TIM3)
+//   {
+//     udpClient_send();
+//   }
+// }
 
 
 /* IMPLEMENTATION FOR UDP CLIENT :   source:https://www.geeksforgeeks.org/udp-server-client-implementation-c/
@@ -78,19 +78,17 @@ void udpClient_connect(void)
 	if (err == ERR_OK)
 	{
 		/* 2. Send message to server */
-		udpClient_send ();
 
 		/* 3. Set a receive callback for the upcb */
 		udp_recv(upcb, udp_receive_callback, NULL);
 	}
 }
 
-static void udpClient_send(void)
+ void udpClient_send(int16_t* data, uint16_t len)
 {
   struct pbuf *txBuf;
-  char data[100];
+  len = len * sizeof(uint16_t);
 
-  int len = sprintf(data, "sending UDP client message %d", cnt);
 
   /* allocate pbuf from pool*/
   txBuf = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
