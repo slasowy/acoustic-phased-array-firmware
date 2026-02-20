@@ -18,6 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "lwip.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include <string.h>
 #include <sys/types.h>
 #include "ethernetif.h"
@@ -27,10 +31,7 @@
 #include "udpServerRAW.h"
 #include "timeouts.h"
 
-struct netif gnetif2;
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+extern struct netif gnetif;
 
 /* USER CODE END Includes */
 
@@ -53,8 +54,8 @@ struct netif gnetif2;
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim8;
-
 
 /* USER CODE BEGIN PV */
 
@@ -67,6 +68,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM8_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -89,6 +91,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc){
   uint32_t error = HAL_ADC_GetError(hadc);
 }
+
+
+
 /* USER CODE END 0 */
 
 /**
@@ -132,9 +137,8 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM8_Init();
   MX_LWIP_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-  __HAL_TIM_ENABLE_IT(&htim8, TIM_IT_UPDATE);
-
   // filepath: Core/Src/main.c
   // Enable NVIC for TIM8 update interrupt
 
@@ -157,13 +161,13 @@ int main(void)
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
   
   //tcp_client_init();
-  udpServer_init();
+  udpClient_connect();
   HAL_Delay(1000);
 
   
   //HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
   //HAL_ADC_Start(&hadc1);
-  //HAL_TIM_Base_Start(&htim8);
+  HAL_TIM_Base_Start_IT(&htim3);
 
   
   /* USER CODE END 2 */
@@ -187,7 +191,6 @@ int main(void)
     if(HAL_GetTick() - startTick >= 10 && count < 1000)
     {
         startTick = HAL_GetTick();
-        udp_transmit(data, 1000);
       }
     if(count >= 1000){
         HAL_Delay(1000);
@@ -320,6 +323,51 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 100;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65535;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
 
 }
 

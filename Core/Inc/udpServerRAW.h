@@ -3,7 +3,7 @@
   ***************************************************************************************************************
   ***************************************************************************************************************
 
-  File:		  udpServerRAW.h
+  File:		  udpClientRAW.h
   Author:     ControllersTech.com
   Updated:    Jul 23, 2021
 
@@ -19,11 +19,11 @@
 */
 
 
-#ifndef INC_UDPSERVERRAW_H_
-#define INC_UDPSERVERRAW_H_
+#ifndef INC_UDPCLIENTRAW_H_
+#define INC_UDPCLIENTRAW_H_
 
 
-void udpServer_init(void);
-void udp_transmit(uint16_t *data, uint16_t len);
 
-#endif /* INC_UDPSERVERRAW_H_ */
+void udpClient_connect(void);
+
+#endif /* INC_UDPCLIENTRAW_H_ */

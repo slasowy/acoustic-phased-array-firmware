@@ -3,7 +3,7 @@
   ***************************************************************************************************************
   ***************************************************************************************************************
 
-  File:		  udpServerRAW.c
+  File:		  udpClientRAW.c
   Author:     ControllersTech.com
   Updated:    Jul 23, 2021
 
@@ -24,115 +24,101 @@
 #include "lwip/tcp.h"
 
 #include "stdio.h"
-#include <stdint.h>
+#include "string.h"
+
 #include "udpServerRAW.h"
 
 
 void udp_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p, const ip_addr_t *addr, u16_t port);
+static void udpClient_send(void);
 
+struct udp_pcb *upcb;
+char buffer[100];
+int cnt = 0;
 
-/* IMPLEMENTATION FOR UDP Server :   source:https://www.geeksforgeeks.org/udp-server-client-implementation-c/
+extern TIM_HandleTypeDef htim3;
 
-1. Create UDP socket.
-2. Bind the socket to server address.
-3. Wait until datagram packet arrives from client.
-4. Process the datagram packet and send a reply to client.
-5. Go back to Step 3.
-*/
-struct udp_pcb *client_upcb;
-u16_t client_port = 0;
-
-void udpServer_init(void)
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	// UDP Control Block structure
-   struct udp_pcb *upcb;
-   err_t err;
-
-   /* 1. Create a new UDP control block  */
-   upcb = udp_new();
-
-   /* 2. Bind the upcb to the local port */
-   ip_addr_t myIPADDR;
-   IP_ADDR4(&myIPADDR, 192, 168, 0, 123);
-
-   err = udp_bind(upcb, &myIPADDR, 7);  // 7 is the server UDP port
-
-
-   /* 3. Set a receive callback for the upcb */
-   if(err == ERR_OK)
-   {
-	   udp_recv(upcb, udp_receive_callback, NULL);
-   }
-   else
-   {
-	   udp_remove(upcb);
-   }
+  if(htim->Instance == TIM3)
+  {
+    udpClient_send();
+  }
 }
 
-// udp_receive_callback will be called, when the client sends some data to the server
-/* 4. Process the datagram packet and send a reply to client. */
+
+/* IMPLEMENTATION FOR UDP CLIENT :   source:https://www.geeksforgeeks.org/udp-server-client-implementation-c/
+
+1. Create UDP socket.
+2. Send message to server.
+3. Wait until response from server is received.
+4. Process reply and go back to step 2, if necessary.
+5. Close socket descriptor and exit.
+*/
+
+
+void udpClient_connect(void)
+{
+	err_t err;
+
+	/* 1. Create a new UDP control block  */
+	upcb = udp_new();
+
+	/* Bind the block to module's IP and port */
+	ip_addr_t myIPaddr;
+	IP_ADDR4(&myIPaddr, 192, 168, 0, 123);
+	udp_bind(upcb, &myIPaddr, 8);
+
+
+	/* configure destination IP address and port */
+	ip_addr_t DestIPaddr;
+	IP_ADDR4(&DestIPaddr, 192, 168, 0, 2);
+	err= udp_connect(upcb, &DestIPaddr, 7);
+
+	if (err == ERR_OK)
+	{
+		/* 2. Send message to server */
+		udpClient_send ();
+
+		/* 3. Set a receive callback for the upcb */
+		udp_recv(upcb, udp_receive_callback, NULL);
+	}
+}
+
+static void udpClient_send(void)
+{
+  struct pbuf *txBuf;
+  char data[100];
+
+  int len = sprintf(data, "sending UDP client message %d", cnt);
+
+  /* allocate pbuf from pool*/
+  txBuf = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
+
+  if (txBuf != NULL)
+  {
+    /* copy data to pbuf */
+    pbuf_take(txBuf, data, len);
+
+    /* send udp data */
+    udp_send(upcb, txBuf);
+
+    /* free pbuf */
+    pbuf_free(txBuf);
+  }
+}
+
 
 void udp_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p, const ip_addr_t *addr, u16_t port)
 {
-	struct pbuf *txBuf;
-  client_port = port;
-  client_upcb = upcb;
+	/* Copy the data from the pbuf */
+	strncpy (buffer, (char *)p->payload, p->len);
 
-	/* Get the IP of the Client */
-	char *remoteIP = ipaddr_ntoa(addr);
+	/*increment message count */
+	cnt++;
 
-	char buf[100];
-
-
-	int len = sprintf (buf,"Hello %s From UDP SERVER\n", (char*)p->payload);
-
-	/* allocate pbuf from RAM*/
-	txBuf = pbuf_alloc(PBUF_TRANSPORT,len, PBUF_RAM);
-
-	/* copy the data into the buffer  */
-	pbuf_take(txBuf, buf, len);
-
-	/* Connect to the remote client */
-	udp_connect(upcb, addr, port);
-
-	/* Send a Reply to the Client */
-	udp_send(upcb, txBuf);
-
-	/* free the UDP connection, so we can accept new clients */
-	udp_disconnect(upcb);
-
-	/* Free the p_tx buffer */
-	pbuf_free(txBuf);
-
-	/* Free the p buffer */
+	/* Free receive pbuf */
 	pbuf_free(p);
 }
 
-void udp_transmit(uint16_t *data, uint16_t len)
-{
-  if(client_port == 0){
-    return;
-  }
-  struct pbuf *txBuf;
-  len = len * sizeof(uint16_t);
-  /* allocate pbuf from RAM*/
-	ip_addr_t client_addr;
-	IP_ADDR4(&client_addr, 192, 168, 0, 2);
 
-  txBuf = pbuf_alloc(PBUF_TRANSPORT,len, PBUF_RAM);
-
-  /* copy the data into the buffer  */
-  pbuf_take(txBuf, data, len);
-
-  /* Connect to the remote client */
-  udp_connect(client_upcb, &client_addr, client_port);
-
-  /* Send a Reply to the Client */
-  udp_send(client_upcb, txBuf);
-
-  /* free the UDP connection, so we can accept new clients */
-  udp_disconnect(client_upcb);
-
-  /* Free the p_tx buffer */
-  pbuf_free(txBuf);
-}
