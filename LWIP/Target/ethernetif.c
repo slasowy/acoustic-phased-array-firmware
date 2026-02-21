@@ -342,11 +342,51 @@ void ethernetif_input(struct netif *netif)
 {
   struct pbuf *p = NULL;
 
+  /* Diagnostic counters */
+  static volatile uint32_t eth_rx_invalid_payload_count = 0;
+  static volatile uint32_t eth_rx_cache_invalidate_count = 0;
+
   do
   {
     p = low_level_input( netif );
     if (p != NULL)
     {
+      /* Validate payload pointers and ensure D-Cache is invalidated for each buffer
+       * before passing to the stack. If a payload pointer looks invalid, drop
+       * the packet to avoid hardfaults. */
+      int bad = 0;
+      struct pbuf *q;
+      for (q = p; q != NULL; q = q->next)
+      {
+        if (q->payload == NULL)
+        {
+          bad = 1;
+          break;
+        }
+        uint32_t addr = (uint32_t)q->payload;
+        uint32_t len = q->len;
+        /* Accept payloads in DTCM, AXI SRAM (0x24000000), or D2 SRAM (0x30000000) */
+        if (!((addr >= 0x20000000 && addr < 0x20020000) ||
+              (addr >= 0x24000000 && addr < 0x24020000) ||
+              (addr >= 0x30000000 && addr < 0x30008000)))
+        {
+          bad = 1;
+          break;
+        }
+        /* Invalidate D-Cache for this payload region (align to 32-byte) */
+        uint32_t aligned_addr = addr & ~((uint32_t)31);
+        uint32_t end = addr + len;
+        uint32_t aligned_end = (end + 31) & ~((uint32_t)31);
+        SCB_InvalidateDCache_by_Addr((uint32_t *)aligned_addr, aligned_end - aligned_addr);
+        eth_rx_cache_invalidate_count++;
+      }
+
+      if (bad)
+      {
+        eth_rx_invalid_payload_count++;
+        pbuf_free(p);
+        continue;
+      }
       if (netif->input( p, netif) != ERR_OK )
       {
         pbuf_free(p);
@@ -743,12 +783,18 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t 
   struct pbuf **ppStart = (struct pbuf **)pStart;
   struct pbuf **ppEnd = (struct pbuf **)pEnd;
   struct pbuf *p = NULL;
+  /* Guard against NULL buffer (allocation failed) */
+  if (buff == NULL)
+  {
+    RxAllocStatus = RX_ALLOC_ERROR;
+    return;
+  }
 
   /* Get the struct pbuf from the buff address. */
   p = (struct pbuf *)(buff - offsetof(RxBuff_t, buff));
   p->next = NULL;
-  p->tot_len = 0;
   p->len = Length;
+  p->tot_len = 0;
 
   /* Chain the buffer. */
   if (!*ppStart)
@@ -763,15 +809,31 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t 
   }
   *ppEnd  = p;
 
-  /* Update the total length of all the buffers of the chain. Each pbuf in the chain should have its tot_len
-   * set to its own length, plus the length of all the following pbufs in the chain. */
-  for (p = *ppStart; p != NULL; p = p->next)
+  /* Recompute tot_len for the chain safely: first compute total length, then set remaining lengths. */
   {
-    p->tot_len += Length;
+    uint32_t total = 0;
+    struct pbuf *pp;
+    for (pp = *ppStart; pp != NULL; pp = pp->next)
+    {
+      total += pp->len;
+    }
+    uint32_t remaining = total;
+    for (pp = *ppStart; pp != NULL; pp = pp->next)
+    {
+      pp->tot_len = remaining;
+      remaining -= pp->len;
+    }
   }
 
-  /* Invalidate data cache because Rx DMA's writing to physical memory makes it stale. */
-  SCB_InvalidateDCache_by_Addr((uint32_t *)buff, Length);
+  /* Invalidate data cache because Rx DMA's writing to physical memory makes it stale.
+   * Align the start address and size to cache line (32 bytes) to be safe. */
+  {
+    uint32_t addr = (uint32_t)buff;
+    uint32_t aligned_addr = addr & ~((uint32_t)31);
+    uint32_t end = addr + Length;
+    uint32_t aligned_end = (end + 31) & ~((uint32_t)31);
+    SCB_InvalidateDCache_by_Addr((uint32_t *)aligned_addr, aligned_end - aligned_addr);
+  }
 
 /* USER CODE END HAL ETH RxLinkCallback */
 }

@@ -67,13 +67,13 @@ void udpClient_connect(void)
 	/* Bind the block to module's IP and port */
 	ip_addr_t myIPaddr;
 	IP_ADDR4(&myIPaddr, 192, 168, 0, 123);
-	udp_bind(upcb, &myIPaddr, 8);
+	udp_bind(upcb, &myIPaddr, 7777);
 
 
 	/* configure destination IP address and port */
 	ip_addr_t DestIPaddr;
 	IP_ADDR4(&DestIPaddr, 192, 168, 0, 2);
-	err= udp_connect(upcb, &DestIPaddr, 7);
+	err= udp_connect(upcb, &DestIPaddr, 6666);
 
 	if (err == ERR_OK)
 	{
