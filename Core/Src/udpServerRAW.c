@@ -80,7 +80,7 @@ void udpClient_connect(void)
 		/* 2. Send message to server */
 
 		/* 3. Set a receive callback for the upcb */
-		udp_recv(upcb, udp_receive_callback, NULL);
+		//udp_recv(upcb, udp_receive_callback, NULL);
 	}
 }
 

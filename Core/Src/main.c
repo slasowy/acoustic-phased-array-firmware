@@ -30,6 +30,7 @@
 #include "stm32h723xx.h"
 #include "stm32h7xx_hal.h"
 //#include "tcpClientRAW.h"
+#include "stm32h7xx_hal_cortex.h"
 #include "udpServerRAW.h"
 #include "timeouts.h"
 
@@ -77,7 +78,7 @@ static void MX_TIM3_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define ADC_CONVERTED_DATA_BUFFER_SIZE 64
+#define ADC_CONVERTED_DATA_BUFFER_SIZE 1200
 static int16_t data[1000];
 
 extern struct netif gnetif;
@@ -86,22 +87,30 @@ extern struct netif gnetif;
 /* USER CODE BEGIN PV */
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
-__attribute__((section(".adcarray"))) uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
+__attribute__((section(".adcarray"))) uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
 
 /* USER CODE END PV */
 /* USER CODE BEGIN PFP */
 
-// void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
-// }
-// void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc){
-//   uint32_t error = HAL_ADC_GetError(hadc);
-// }
+volatile uint8_t adc_first_half_ready = 0;
+volatile uint8_t adc_second_half_ready = 0;
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
+  adc_first_half_ready = 1;
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+  adc_second_half_ready = 1;
+}
+void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc){
+  uint32_t error = HAL_ADC_GetError(hadc);
+}
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if(htim->Instance == TIM3)
   {
-    udpClient_send(data, 600);
+    //udpClient_send(data, 600);
   }
 }
 
@@ -158,21 +167,20 @@ int main(void)
   // filepath: Core/Src/main.c
   // Enable NVIC for TIM8 update interrupt
 
-  // Add MPU configuration for non-cacheable buffer
-  // MPU_Region_InitTypeDef MPU_InitStruct = {0};
-  // MPU_InitStruct.Enable = MPU_REGION_ENABLE;
-  // MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  // MPU_InitStruct.BaseAddress = (uint32_t)uhADCxConvertedData;
-  // MPU_InitStruct.Size = MPU_REGION_SIZE_256B;  // Adjust size as needed (64*2=128B, so 256B region)
-  // MPU_InitStruct.SubRegionDisable = 0x0;
-  // MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  // MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
-  // MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
-  // MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
-  // MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
-  // MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
-  // HAL_MPU_ConfigRegion(&MPU_InitStruct);
-  // HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+  MPU_Region_InitTypeDef MPU_InitStruct = {0};
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+  MPU_InitStruct.BaseAddress = (uint32_t)uhADCxConvertedData;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_4KB;  // Adjust size as needed (64*2=128B, so 256B region)
+  MPU_InitStruct.SubRegionDisable = 0x0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
   
@@ -181,9 +189,9 @@ int main(void)
   HAL_Delay(1000);
 
   
-  //HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
   //HAL_ADC_Start(&hadc1);
-  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_Base_Start(&htim3);
 
   
   /* USER CODE END 2 */
@@ -204,11 +212,18 @@ int main(void)
     MX_LWIP_Process();
     //ethernetif_input(&gnetif);
     //sys_check_timeouts();
-    if(HAL_GetTick() - startTick >= 1 && count < 1000)
-    {
-        startTick = HAL_GetTick();
-        //udpClient_send(data, 600);
-      }
+    if(adc_first_half_ready){
+      // Process first half of the buffer
+      // For example, send the first 600 samples
+      udpClient_send((int16_t*)uhADCxConvertedData, 600);
+      
+      adc_first_half_ready = 0;
+    }else if(adc_second_half_ready){
+      // Process second half of the buffer
+      // For example, send the next 600 samples
+      udpClient_send((int16_t*)(uhADCxConvertedData + 600), 600);
+      adc_second_half_ready = 0;
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -298,7 +313,7 @@ static void MX_ADC1_Init(void)
   /** Common config
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV256;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc1.Init.Resolution = ADC_RESOLUTION_16B;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
@@ -306,8 +321,8 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T3_TRGO;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc1.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DMA_CIRCULAR;
   hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
   hadc1.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
@@ -345,6 +360,7 @@ static void MX_ADC1_Init(void)
 
 }
 
+
 /**
   * @brief TIM3 Initialization Function
   * @param None
@@ -364,9 +380,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 100;
+  htim3.Init.Prescaler = 10;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65;
+  htim3.Init.Period = 650;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -378,7 +394,7 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
   {
