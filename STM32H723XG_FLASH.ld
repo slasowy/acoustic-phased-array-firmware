@@ -71,7 +71,13 @@ FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K
 
 /* Define output sections */
 SECTIONS
-{
+{ 
+  .mysection (NOLOAD):
+  {
+    . = ABSOLUTE(0x38000000);
+    *(.adcarray)
+  } >RAM_D3
+
   /* The startup code goes first into FLASH */
   .isr_vector :
   {

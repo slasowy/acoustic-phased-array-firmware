@@ -86,6 +86,8 @@ extern struct netif gnetif;
 /* USER CODE BEGIN PV */
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
+__attribute__((section(".adcarray"))) uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
+
 /* USER CODE END PV */
 /* USER CODE BEGIN PFP */
 
