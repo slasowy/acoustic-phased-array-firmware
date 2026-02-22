@@ -85,17 +85,23 @@ extern struct netif gnetif;
 /* USER CODE END PD */
 /* USER CODE BEGIN PV */
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
-uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
+//uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
 /* USER CODE END PV */
 /* USER CODE BEGIN PFP */
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
-}
-void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc){
-  uint32_t error = HAL_ADC_GetError(hadc);
-}
+// void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+// }
+// void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc){
+//   uint32_t error = HAL_ADC_GetError(hadc);
+// }
 
-
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if(htim->Instance == TIM3)
+  {
+    udpClient_send(data, 600);
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -107,6 +113,11 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  uint32_t pseudodelay = 0;
+  while(pseudodelay++ < 0xFFFFFF)
+  {
+    __NOP();
+  }
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -146,20 +157,20 @@ int main(void)
   // Enable NVIC for TIM8 update interrupt
 
   // Add MPU configuration for non-cacheable buffer
-  MPU_Region_InitTypeDef MPU_InitStruct = {0};
-  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
-  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  MPU_InitStruct.BaseAddress = (uint32_t)uhADCxConvertedData;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_256B;  // Adjust size as needed (64*2=128B, so 256B region)
-  MPU_InitStruct.SubRegionDisable = 0x0;
-  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
-  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
-  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
-  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
-  MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
-  HAL_MPU_ConfigRegion(&MPU_InitStruct);
-  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+  // MPU_Region_InitTypeDef MPU_InitStruct = {0};
+  // MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  // MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+  // MPU_InitStruct.BaseAddress = (uint32_t)uhADCxConvertedData;
+  // MPU_InitStruct.Size = MPU_REGION_SIZE_256B;  // Adjust size as needed (64*2=128B, so 256B region)
+  // MPU_InitStruct.SubRegionDisable = 0x0;
+  // MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  // MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  // MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+  // MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  // MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  // MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+  // HAL_MPU_ConfigRegion(&MPU_InitStruct);
+  // HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
   
@@ -170,7 +181,7 @@ int main(void)
   
   //HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
   //HAL_ADC_Start(&hadc1);
-  //HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_Base_Start_IT(&htim3);
 
   
   /* USER CODE END 2 */
@@ -194,7 +205,7 @@ int main(void)
     if(HAL_GetTick() - startTick >= 1 && count < 1000)
     {
         startTick = HAL_GetTick();
-        udpClient_send(data, 600);
+        //udpClient_send(data, 600);
       }
     /* USER CODE END WHILE */
 
@@ -353,7 +364,7 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 100;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 65;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
