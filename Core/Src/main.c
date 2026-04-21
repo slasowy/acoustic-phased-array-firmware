@@ -108,7 +108,7 @@ extern struct netif gnetif;
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
 __attribute__((section(".adcarray"))) uint8_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
-__attribute__((section(".adcarray"))) uint8_t adc_rx_data[15000];
+__attribute__((section(".adcarray"))) uint8_t adc_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
 
 
 /* USER CODE END PV */
@@ -121,27 +121,36 @@ volatile uint8_t spi_transfer_complete = 0;
 volatile int16_t converted_data[200];
 volatile uint16_t converted_data_index = 0;
 
+volatile uint8_t adc1_configured = 0;
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 
 }
-void HAL_SPI_RxHalfCpltCallback(SPI_HandleTypeDef *hspi)
+void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi)
 {
 
 
     if(hspi->Instance == SPI1) {
         adc_first_half_ready = 1;
+        if(adc1_configured == 0){
+        adc1_configured = 1;
+        for(int i = 0; i < 21; i++){
+          uhADCxConvertedData[i] = 0;
+          }
+        }
         //HAL_SPI_Receive_DMA(&hspi1, (uint8_t*)adc_rx_data, 3);
         //converted_data[converted_data_index] = ((int16_t)adc_rx_data[0]) << 10 | ((int16_t)adc_rx_data[1]) << 2 | ((int16_t)adc_rx_data[2]) >> 6;
         //converted_data_index = (converted_data_index + 1) % 200; // Increment index and wrap around
     }
 }
-void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
     if(hspi->Instance == SPI1) {
+
         adc_second_half_ready = 1;
-        HAL_SPI_Receive_DMA(&hspi1, (uint8_t*)adc_rx_data, 15000);
+        //HAL_SPI_Receive_DMA(&hspi1, (uint8_t*)adc_rx_data, 15000);
     }
   }   
      
@@ -176,7 +185,7 @@ int main(void)
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
-a  MPU_Config();
+  MPU_Config();
 
   /* Enable the CPU Cache */
 
@@ -305,7 +314,6 @@ a  MPU_Config();
   uhADCxConvertedData[19] = (int8_t)setting_7;
   uhADCxConvertedData[20] =  0;
 
-
   // uhADCxConvertedData[0] = 0x1062 <<4;
   // uhADCxConvertedData[1] = 0x3FF << 4;
   // uhADCxConvertedData[2] = 0x1005 << 4;
@@ -316,16 +324,15 @@ a  MPU_Config();
   
   HAL_Delay(100);
   // Transmit configuration using normal DMA mode
-  HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, 21);
+  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc_rx_data, 21);
   // Wait for SPI1 DMA transmission to complete
-  while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY);
   //_HAL_DMA_DISABLE(&hdma_spi1_rx); // Disable SPI1 RX DMA before reconfiguring
-  HAL_Delay(100);
-  HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)uhADCxConvertedData, 21);
+  //HAL_Delay(100);
+  //HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)uhADCxConvertedData, 21);
   //_HAL_DMA_DISABLE(&hdma_spi1_rx); // Disable SPI1 RX DMA before reconfiguring
 
   // Wait for SPI3 DMA transmission to complete
-  while (HAL_SPI_GetState(&hspi3) != HAL_SPI_STATE_READY);
+  //while (HAL_SPI_GetState(&hspi3) != HAL_SPI_STATE_READY);
   HAL_Delay(100);
   
   // Switch DMA to circular mode for continuous reception
@@ -337,12 +344,7 @@ a  MPU_Config();
   
   //__HAL_DMA_ENABLE(&hdma_spi1_rx);
   
-  for(int i = 0; i < 200; i++){
-    uint32_t channel = (i % 4); 
-    //uhADCxConvertedData[i] = channel << (14 + 4);
-    uhADCxConvertedData[i] = 0;
-  }
-  HAL_SPI_Receive_DMA(&hspi1,(uint8_t*)adc_rx_data, 15000);
+  //HAL_SPI_Receive_DMA(&hspi1,(uint8_t*)adc_rx_data, 15000);
 
   while(1){
     if(adc_first_half_ready){
@@ -350,8 +352,8 @@ a  MPU_Config();
       char buffer[50];
       converted_data[0] = ((int16_t)adc_rx_data[0]) << 10 | ((int16_t)adc_rx_data[1]) << 2 | ((int16_t)adc_rx_data[2]) >> 6;
       converted_data[1] = ((int16_t)adc_rx_data[2]) << 14 | ((int16_t)adc_rx_data[3]) << 6 | ((int16_t)adc_rx_data[4]) >> 4;
-      //sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x\n", adc_rx_data[0], adc_rx_data[1], adc_rx_data[2], adc_rx_data[3], adc_rx_data[4], adc_rx_data[5]);
-      sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
+      sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x\n", adc_rx_data[0], adc_rx_data[1], adc_rx_data[2], adc_rx_data[3], adc_rx_data[4], adc_rx_data[5]);
+      //sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
       HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
     }
 
