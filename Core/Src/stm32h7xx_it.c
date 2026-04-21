@@ -58,6 +58,12 @@
 extern ETH_HandleTypeDef heth;
 extern DMA_HandleTypeDef hdma_adc1;
 extern ADC_HandleTypeDef hadc1;
+extern DMA_HandleTypeDef hdma_spi1_tx;
+extern DMA_HandleTypeDef hdma_spi1_rx;
+extern DMA_HandleTypeDef hdma_spi3_tx;
+extern SPI_HandleTypeDef hspi1;
+extern SPI_HandleTypeDef hspi3;
+extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim3;
 /* USER CODE BEGIN EV */
 
@@ -101,31 +107,6 @@ void HardFault_Handler(void)
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
-
-/* USER CODE BEGIN 1 */
-void HardFault_Handler_C(unsigned int *hardfault_args) {
-    volatile unsigned int stacked_r0;
-    volatile unsigned int stacked_r1;
-    volatile unsigned int stacked_r2;
-    volatile unsigned int stacked_r3;
-    volatile unsigned int stacked_r12;
-    volatile unsigned int stacked_lr;
-    volatile unsigned int stacked_pc;
-    volatile unsigned int stacked_psr;
-
-    stacked_r0 = ((unsigned int)hardfault_args[0]);
-    stacked_r1 = ((unsigned int)hardfault_args[1]);
-    stacked_r2 = ((unsigned int)hardfault_args[2]);
-    stacked_r3 = ((unsigned int)hardfault_args[3]);
-    stacked_r12 = ((unsigned int)hardfault_args[4]);
-    stacked_lr = ((unsigned int)hardfault_args[5]);
-    stacked_pc = ((unsigned int)hardfault_args[6]);
-    stacked_psr = ((unsigned int)hardfault_args[7]);
-
-    // Set a breakpoint here to inspect variables in debugger
-    __asm("BKPT #0");
-}
-/* USER CODE END 1 */
 
 /**
   * @brief This function handles Memory management fault.
@@ -247,6 +228,34 @@ void DMA1_Stream0_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles DMA1 stream1 global interrupt.
+  */
+void DMA1_Stream1_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream1_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_spi3_tx);
+  /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 stream2 global interrupt.
+  */
+void DMA1_Stream2_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream2_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream2_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_spi1_rx);
+  /* USER CODE BEGIN DMA1_Stream2_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream2_IRQn 1 */
+}
+
+/**
   * @brief This function handles ADC1 and ADC2 global interrupts.
   */
 void ADC_IRQHandler(void)
@@ -258,6 +267,20 @@ void ADC_IRQHandler(void)
   /* USER CODE BEGIN ADC_IRQn 1 */
 
   /* USER CODE END ADC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM1 update interrupt.
+  */
+void TIM1_UP_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM1_UP_IRQn 0 */
+
+  /* USER CODE END TIM1_UP_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim1);
+  /* USER CODE BEGIN TIM1_UP_IRQn 1 */
+
+  /* USER CODE END TIM1_UP_IRQn 1 */
 }
 
 /**
@@ -275,6 +298,48 @@ void TIM3_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles SPI1 global interrupt.
+  */
+void SPI1_IRQHandler(void)
+{
+  /* USER CODE BEGIN SPI1_IRQn 0 */
+
+  /* USER CODE END SPI1_IRQn 0 */
+  HAL_SPI_IRQHandler(&hspi1);
+  /* USER CODE BEGIN SPI1_IRQn 1 */
+
+  /* USER CODE END SPI1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles SPI3 global interrupt.
+  */
+void SPI3_IRQHandler(void)
+{
+  /* USER CODE BEGIN SPI3_IRQn 0 */
+
+  /* USER CODE END SPI3_IRQn 0 */
+  HAL_SPI_IRQHandler(&hspi3);
+  /* USER CODE BEGIN SPI3_IRQn 1 */
+
+  /* USER CODE END SPI3_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA2 stream0 global interrupt.
+  */
+void DMA2_Stream0_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 0 */
+
+  /* USER CODE END DMA2_Stream0_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_spi1_tx);
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 1 */
+
+  /* USER CODE END DMA2_Stream0_IRQn 1 */
+}
+
+/**
   * @brief This function handles Ethernet global interrupt.
   */
 void ETH_IRQHandler(void)
@@ -289,5 +354,26 @@ void ETH_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+void HardFault_Handler_C(unsigned int *hardfault_args) {
+    volatile unsigned int stacked_r0;
+    volatile unsigned int stacked_r1;
+    volatile unsigned int stacked_r2;
+    volatile unsigned int stacked_r3;
+    volatile unsigned int stacked_r12;
+    volatile unsigned int stacked_lr;
+    volatile unsigned int stacked_pc;
+    volatile unsigned int stacked_psr;
 
+    stacked_r0 = ((unsigned int)hardfault_args[0]);
+    stacked_r1 = ((unsigned int)hardfault_args[1]);
+    stacked_r2 = ((unsigned int)hardfault_args[2]);
+    stacked_r3 = ((unsigned int)hardfault_args[3]);
+    stacked_r12 = ((unsigned int)hardfault_args[4]);
+    stacked_lr = ((unsigned int)hardfault_args[5]);
+    stacked_pc = ((unsigned int)hardfault_args[6]);
+    stacked_psr = ((unsigned int)hardfault_args[7]);
+
+    // Set a breakpoint here to inspect variables in debugger
+    __asm("BKPT #0");
+}
 /* USER CODE END 1 */
