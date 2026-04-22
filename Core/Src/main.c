@@ -91,7 +91,7 @@ static void MX_USART3_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define ADC_CONVERTED_DATA_BUFFER_SIZE 2000
+#define ADC_CONVERTED_DATA_BUFFER_SIZE 1000
 
 
 extern struct netif gnetif;
@@ -118,9 +118,14 @@ volatile uint8_t adc1_configured = 0;
 
 void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
   if(hspi->Instance == SPI1) {
-    for(int i = 0; i < 5; i++){
-      uhADCxConvertedData[i] = 0;
+    if(!adc1_configured){
+      adc1_configured = 1;
+      uint32_t channel_select[4] = {0x4000 << 4, 0x8000 << 4, 0xC000 << 4, 0};
+      for(int i = 0; i < 5; i++){
+        uhADCxConvertedData[i] = channel_select[i % 4];
+      }
     }
+
     adc_first_half_ready = 1;
   }
 }
@@ -272,6 +277,11 @@ int main(void)
   // uhADCxConvertedData[19] = (int8_t)setting_7;
   // uhADCxConvertedData[20] =  0;
 
+  uint32_t channel_select[4] = {0x4000, 0x8000, 0xC000, 0};
+  for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
+    uhADCxConvertedData[i] = channel_select[i % 4];
+  }
+
   uhADCxConvertedData[0] = 0x1062 <<4;
   uhADCxConvertedData[1] = 0x3FF << 4;
   uhADCxConvertedData[2] = 0x1005 << 4;
@@ -332,10 +342,11 @@ int main(void)
       converted_data[1] = (int16_t)((adc_rx_data[1]) >> 2);
       converted_data[2] = (int16_t)((adc_rx_data[2]) >> 2);
       converted_data[3] = (int16_t)((adc_rx_data[3]) >> 2);
+      converted_data[4] = (int16_t)((adc_rx_data[4]) >> 2);
 
       //sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x, %x, %x\n", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
       //sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
-      sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
+      sprintf(buffer, "Received: %d, %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3], converted_data[4]);
       //sprintf(buffer, "Received: %ld, %ld, %ld, %ld\n", adc_rx_data[0], adc_rx_data[1], adc_rx_data[2], adc_rx_data[3]);
       HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
     }
