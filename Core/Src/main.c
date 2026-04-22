@@ -61,12 +61,8 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 SPI_HandleTypeDef hspi1;
-SPI_HandleTypeDef hspi2;
-SPI_HandleTypeDef hspi3;
-SPI_HandleTypeDef hspi4;
-DMA_HandleTypeDef hdma_spi1_tx;
 DMA_HandleTypeDef hdma_spi1_rx;
-DMA_HandleTypeDef hdma_spi3_tx;
+DMA_HandleTypeDef hdma_spi1_tx;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
@@ -88,9 +84,6 @@ static void MX_TIM8_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_SPI4_Init(void);
-static void MX_SPI2_Init(void);
-static void MX_SPI3_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -98,7 +91,7 @@ static void MX_USART3_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define ADC_CONVERTED_DATA_BUFFER_SIZE 400
+#define ADC_CONVERTED_DATA_BUFFER_SIZE 2000
 
 
 extern struct netif gnetif;
@@ -107,8 +100,8 @@ extern struct netif gnetif;
 /* USER CODE BEGIN PV */
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
-__attribute__((section(".adcarray"))) uint8_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
-__attribute__((section(".adcarray"))) uint8_t adc_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
+__attribute__((section(".adcarray"))) uint32_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
+__attribute__((section(".adcarray"))) uint32_t adc_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
 
 
 /* USER CODE END PV */
@@ -123,49 +116,21 @@ volatile uint16_t converted_data_index = 0;
 
 volatile uint8_t adc1_configured = 0;
 
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-
-}
-void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi)
-{
-
-
-    if(hspi->Instance == SPI1) {
-        adc_first_half_ready = 1;
-        if(adc1_configured == 0){
-        adc1_configured = 1;
-        for(int i = 0; i < 21; i++){
-          uhADCxConvertedData[i] = 0;
-          }
-        }
-        //HAL_SPI_Receive_DMA(&hspi1, (uint8_t*)adc_rx_data, 3);
-        //converted_data[converted_data_index] = ((int16_t)adc_rx_data[0]) << 10 | ((int16_t)adc_rx_data[1]) << 2 | ((int16_t)adc_rx_data[2]) >> 6;
-        //converted_data_index = (converted_data_index + 1) % 200; // Increment index and wrap around
+void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
+  if(hspi->Instance == SPI1) {
+    for(int i = 0; i < 5; i++){
+      uhADCxConvertedData[i] = 0;
     }
+    adc_first_half_ready = 1;
+  }
 }
-void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-    if(hspi->Instance == SPI1) {
-
-        adc_second_half_ready = 1;
-        //HAL_SPI_Receive_DMA(&hspi1, (uint8_t*)adc_rx_data, 15000);
-    }
-  }   
      
-// void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
-// {    spi_transfer_complete = 1;
-//      if(adc_second_half_ready == 1){
-//       HAL_UART_Transmit(&huart3, "too slow!", strlen("too slow!"), HAL_MAX_DELAY);
-
-//     }
-//     if(hspi->Instance == SPI1) {
-//         HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc_rx_data, 15000);
-
-//         adc_second_half_ready = 1;
-//     }
-// }
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
+    if(hspi->Instance == SPI1) {
+        //HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc_rx_data, 15000);
+        adc_second_half_ready = 1;
+    }
+}
 
 /* USER CODE END 0 */
 
@@ -218,9 +183,6 @@ int main(void)
   MX_TIM3_Init();
   MX_SPI1_Init();
   MX_TIM1_Init();
-  MX_SPI4_Init();
-  MX_SPI2_Init();
-  MX_SPI3_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   // filepath: Core/Src/main.c
@@ -250,15 +212,7 @@ int main(void)
   
   //HAL_ADC_Start_DMA(&hadc1, (uint32_t*)uhADCxConvertedData, ADC_CONVERTED_DATA_BUFFER_SIZE);
   //HAL_ADC_Start(&hadc1);
-  uint16_t pData = 0 | (0<<0) | (1<<11); 
 
-
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-
-
-  TIM1->CCR1 = 10;
-  TIM8->CCR1 = 5; // 50% duty cycle for 1.25 MHz sampling rate (assuming 16 MHz timer clock)
 
   HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(RX_EN_SIG_GPIO_Port, RX_EN_SIG_Pin, GPIO_PIN_SET);
@@ -281,50 +235,67 @@ int main(void)
   uint16_t setting_2 = 0x3FF;
   uint16_t setting_3 = 0x1005;
   uint16_t setting_4 = 0x3FF;
-  uint16_t setting_5 = 0x1009;
-  uint16_t setting_6 = 0x31B0;
+  // uint16_t setting_5 = 0x1009;
+  // uint16_t setting_6 = 0x31B0;
   //uint16_t setting_6 = 0x3000;
-  uint16_t setting_7 = 0x1040;
+  uint16_t setting_5 = 0x1060;
+  for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
+    uhADCxConvertedData[i] = 0;
+    adc_rx_data[i] = 0;
+  }
 
-  uhADCxConvertedData[0] = (int8_t)(setting_1 >> 8);
-  uhADCxConvertedData[1] = (int8_t)setting_1;
-  uhADCxConvertedData[2] =  0;
+  // uhADCxConvertedData[0] = (int8_t)(setting_1 >> 8);
+  // uhADCxConvertedData[1] = (int8_t)setting_1;
+  // uhADCxConvertedData[2] =  0;
 
-  uhADCxConvertedData[3] = (int8_t)(setting_2 >> 8);
-  uhADCxConvertedData[4] = (int8_t)setting_2;
-  uhADCxConvertedData[5] =  0;
+  // uhADCxConvertedData[3] = (int8_t)(setting_2 >> 8);
+  // uhADCxConvertedData[4] = (int8_t)setting_2;
+  // uhADCxConvertedData[5] =  0;
 
-  uhADCxConvertedData[6] = (int8_t)(setting_3 >> 8);
-  uhADCxConvertedData[7] = (int8_t)setting_3;
-  uhADCxConvertedData[8] =  0;
+  // uhADCxConvertedData[6] = (int8_t)(setting_3 >> 8);
+  // uhADCxConvertedData[7] = (int8_t)setting_3;
+  // uhADCxConvertedData[8] =  0;
 
-  uhADCxConvertedData[9] = (int8_t)(setting_4 >> 8);
-  uhADCxConvertedData[10] = (int8_t)setting_4;
-  uhADCxConvertedData[11] =  0;
+  // uhADCxConvertedData[9] = (int8_t)(setting_4 >> 8);
+  // uhADCxConvertedData[10] = (int8_t)setting_4;
+  // uhADCxConvertedData[11] =  0;
 
-  uhADCxConvertedData[12] = (int8_t)(setting_5 >> 8);
-  uhADCxConvertedData[13] = (int8_t)setting_5;
-  uhADCxConvertedData[14] =  0;
+  // uhADCxConvertedData[12] = (int8_t)(setting_5 >> 8);
+  // uhADCxConvertedData[13] = (int8_t)setting_5;
+  // uhADCxConvertedData[14] =  0;
 
-  uhADCxConvertedData[15] = (int8_t)(setting_6 >> 8);
-  uhADCxConvertedData[16] = (int8_t)setting_6;
-  uhADCxConvertedData[17] =  0;
+  // uhADCxConvertedData[15] = (int8_t)(setting_6 >> 8);
+  // uhADCxConvertedData[16] = (int8_t)setting_6;
+  // uhADCxConvertedData[17] =  0;
 
-  uhADCxConvertedData[18] = (int8_t)(setting_7 >> 8);
-  uhADCxConvertedData[19] = (int8_t)setting_7;
-  uhADCxConvertedData[20] =  0;
+  // uhADCxConvertedData[18] = (int8_t)(setting_7 >> 8);
+  // uhADCxConvertedData[19] = (int8_t)setting_7;
+  // uhADCxConvertedData[20] =  0;
 
-  // uhADCxConvertedData[0] = 0x1062 <<4;
-  // uhADCxConvertedData[1] = 0x3FF << 4;
-  // uhADCxConvertedData[2] = 0x1005 << 4;
-  // uhADCxConvertedData[3] = 0x3FF << 4;
+  uhADCxConvertedData[0] = 0x1062 <<4;
+  uhADCxConvertedData[1] = 0x3FF << 4;
+  uhADCxConvertedData[2] = 0x1005 << 4;
+  uhADCxConvertedData[3] = 0x3FF << 4;
 
-  // uhADCxConvertedData[4] = 0x1040 << 4;
+  uhADCxConvertedData[4] = 0x1040 << 4;
+  //uhADCxConvertedData[0] = 1 << 5;
+  //uhADCxConvertedData[1] = 1 << 6;
+  
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
+
+
+  TIM8->CCR1 = 5; // 50% duty cycle for 1.25 MHz sampling rate (assuming 16 MHz timer clock)
+
+  TIM1->CCR1 = 10;
+
+    HAL_Delay(100);
+  // Transmit configuration using normal DMA mode
+  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
+
 
   
-  HAL_Delay(100);
-  // Transmit configuration using normal DMA mode
-  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc_rx_data, 21);
   // Wait for SPI1 DMA transmission to complete
   //_HAL_DMA_DISABLE(&hdma_spi1_rx); // Disable SPI1 RX DMA before reconfiguring
   //HAL_Delay(100);
@@ -333,7 +304,7 @@ int main(void)
 
   // Wait for SPI3 DMA transmission to complete
   //while (HAL_SPI_GetState(&hspi3) != HAL_SPI_STATE_READY);
-  HAL_Delay(100);
+  //HAL_Delay(100);
   
   // Switch DMA to circular mode for continuous reception
   // Disable DMA before reconfiguring
@@ -350,10 +321,22 @@ int main(void)
     if(adc_first_half_ready){
       adc_first_half_ready = 0;
       char buffer[50];
-      converted_data[0] = ((int16_t)adc_rx_data[0]) << 10 | ((int16_t)adc_rx_data[1]) << 2 | ((int16_t)adc_rx_data[2]) >> 6;
-      converted_data[1] = ((int16_t)adc_rx_data[2]) << 14 | ((int16_t)adc_rx_data[3]) << 6 | ((int16_t)adc_rx_data[4]) >> 4;
-      sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x\n", adc_rx_data[0], adc_rx_data[1], adc_rx_data[2], adc_rx_data[3], adc_rx_data[4], adc_rx_data[5]);
+      //converted_data[0] = ((int16_t)adc_rx_data[0]) << 10 | ((int16_t)adc_rx_data[1]) << 2 | ((int16_t)adc_rx_data[2]) >> 6;
+      //converted_data[1] = ((int16_t)adc_rx_data[2]) << 14 | ((int16_t)adc_rx_data[3]) << 6 | ((int16_t)adc_rx_data[4]) >> 4;
+      uint8_t bytes[50];
+      for(int i = 0; i < 50; i++){
+        bytes[i] = adc_rx_data[i/4] >> (8 * (3 - (i % 4))) & 0xFF; // Extract byte from uint32_t
+
+      }
+      converted_data[0] = (int16_t)((adc_rx_data[0]) >> 2);
+      converted_data[1] = (int16_t)((adc_rx_data[1]) >> 2);
+      converted_data[2] = (int16_t)((adc_rx_data[2]) >> 2);
+      converted_data[3] = (int16_t)((adc_rx_data[3]) >> 2);
+
+      //sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x, %x, %x\n", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
       //sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
+      sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
+      //sprintf(buffer, "Received: %ld, %ld, %ld, %ld\n", adc_rx_data[0], adc_rx_data[1], adc_rx_data[2], adc_rx_data[3]);
       HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
     }
 
@@ -390,8 +373,6 @@ int main(void)
     // HAL_SPI_Transmit(&hspi1, (uint8_t*)&pData, sizeof(pData), HAL_MAX_DELAY);
     // pData = 0b0001000001100000;
     // HAL_SPI_Transmit(&hspi1, (uint8_t*)&pData, sizeof(pData), HAL_MAX_DELAY);
-
-
   }
   int32_t rx_Dat[50];
   uint8_t index = 0;
@@ -578,7 +559,7 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_SLAVE;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_20BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_HARD_INPUT;
@@ -607,147 +588,6 @@ static void MX_SPI1_Init(void)
 }
 
 /**
-  * @brief SPI2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI2_Init(void)
-{
-
-  /* USER CODE BEGIN SPI2_Init 0 */
-
-  /* USER CODE END SPI2_Init 0 */
-
-  /* USER CODE BEGIN SPI2_Init 1 */
-
-  /* USER CODE END SPI2_Init 1 */
-  /* SPI2 parameter configuration*/
-  hspi2.Instance = SPI2;
-  hspi2.Init.Mode = SPI_MODE_SLAVE;
-  hspi2.Init.Direction = SPI_DIRECTION_2LINES_RXONLY;
-  hspi2.Init.DataSize = SPI_DATASIZE_20BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi2.Init.NSS = SPI_NSS_HARD_INPUT;
-  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi2.Init.CRCPolynomial = 0x0;
-  hspi2.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  hspi2.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi2.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi2.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi2.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi2.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi2.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi2.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi2.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi2.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  if (HAL_SPI_Init(&hspi2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI2_Init 2 */
-
-  /* USER CODE END SPI2_Init 2 */
-
-}
-
-/**
-  * @brief SPI3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI3_Init(void)
-{
-
-  /* USER CODE BEGIN SPI3_Init 0 */
-
-  /* USER CODE END SPI3_Init 0 */
-
-  /* USER CODE BEGIN SPI3_Init 1 */
-
-  /* USER CODE END SPI3_Init 1 */
-  /* SPI3 parameter configuration*/
-  hspi3.Instance = SPI3;
-  hspi3.Init.Mode = SPI_MODE_SLAVE;
-  hspi3.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi3.Init.DataSize = SPI_DATASIZE_20BIT;
-  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi3.Init.CLKPhase = SPI_PHASE_2EDGE;
-  hspi3.Init.NSS = SPI_NSS_HARD_INPUT;
-  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi3.Init.CRCPolynomial = 0x0;
-  hspi3.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  hspi3.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi3.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi3.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi3.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi3.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi3.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi3.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi3.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi3.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  if (HAL_SPI_Init(&hspi3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI3_Init 2 */
-
-  /* USER CODE END SPI3_Init 2 */
-
-}
-
-/**
-  * @brief SPI4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI4_Init(void)
-{
-
-  /* USER CODE BEGIN SPI4_Init 0 */
-
-  /* USER CODE END SPI4_Init 0 */
-
-  /* USER CODE BEGIN SPI4_Init 1 */
-
-  /* USER CODE END SPI4_Init 1 */
-  /* SPI4 parameter configuration*/
-  hspi4.Instance = SPI4;
-  hspi4.Init.Mode = SPI_MODE_SLAVE;
-  hspi4.Init.Direction = SPI_DIRECTION_2LINES_RXONLY;
-  hspi4.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi4.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi4.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi4.Init.NSS = SPI_NSS_HARD_INPUT;
-  hspi4.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi4.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi4.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi4.Init.CRCPolynomial = 0x0;
-  hspi4.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  hspi4.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi4.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi4.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi4.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi4.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi4.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi4.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi4.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi4.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  if (HAL_SPI_Init(&hspi4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI4_Init 2 */
-
-  /* USER CODE END SPI4_Init 2 */
-
-}
-
-/**
   * @brief TIM1 Initialization Function
   * @param None
   * @retval None
@@ -769,7 +609,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 219;
+  htim1.Init.Period = 199;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -1004,8 +844,8 @@ static void MX_DMA_Init(void)
 {
 
   /* DMA controller clock enable */
-  __HAL_RCC_DMA2_CLK_ENABLE();
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   /* DMA1_Stream0_IRQn interrupt configuration */
@@ -1014,15 +854,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
-  /* DMA1_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
-  /* DMAMUX1_OVR_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMAMUX1_OVR_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMAMUX1_OVR_IRQn);
 
 }
 
@@ -1039,10 +873,10 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
