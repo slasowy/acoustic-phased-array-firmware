@@ -61,8 +61,11 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi3;
 DMA_HandleTypeDef hdma_spi1_rx;
 DMA_HandleTypeDef hdma_spi1_tx;
+DMA_HandleTypeDef hdma_spi3_rx;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
@@ -85,6 +88,7 @@ static void MX_TIM3_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_SPI3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -109,9 +113,11 @@ __attribute__((section(".adcarray"))) uint32_t adc2_rx_data[ADC_CONVERTED_DATA_B
 /* USER CODE END PV */
 /* USER CODE BEGIN PFP */
 
-volatile uint8_t adc_first_half_ready = 0;
-volatile uint8_t adc_second_half_ready = 0;
-volatile uint8_t spi_transfer_complete = 0;
+volatile uint8_t adc1_first_half_ready = 0;
+volatile uint8_t adc1_second_half_ready = 0;
+
+volatile uint8_t adc2_first_half_ready = 0;
+volatile uint8_t adc2_second_half_ready = 0;
 
 volatile int16_t converted_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
 volatile uint16_t converted_data_index = 0;
@@ -123,19 +129,26 @@ void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
     if(!adc1_configured){
       adc1_configured = 1;
       uint32_t channel_select[8] = {0, 0, 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0};
-      for(int i = 0; i < 8; i++){
+      for(int i = 0; i < 10; i++){
         uhADCxConvertedData[i] = channel_select[i % 8];
       }
     }
-
-    adc_first_half_ready = 1;
+    adc1_first_half_ready = 1;
+  }
+  if(hspi->Instance == SPI3) {
+    //HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)uhADCxConvertedData, 21);
+    adc2_first_half_ready = 1;
   }
 }
      
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
     if(hspi->Instance == SPI1) {
         //HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc1_rx_data, 15000);
-        adc_second_half_ready = 1;
+        adc1_second_half_ready = 1;
+    }
+    if(hspi->Instance == SPI3) {
+        //HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)uhADCxConvertedData, 21);
+        adc2_second_half_ready = 1;
     }
 }
 
@@ -191,6 +204,7 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_USART3_UART_Init();
+  MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
   // filepath: Core/Src/main.c
   // Enable NVIC for TIM8 update interrupt
@@ -275,15 +289,24 @@ int main(void)
     uhADCxConvertedData[i] = channel_select[i % 8];
   }
 
-  uhADCxConvertedData[0] = 0x1062 <<4;
-  uhADCxConvertedData[1] = 0x3FF << 4;
-  uhADCxConvertedData[2] = 0x1005 << 4;
-  uhADCxConvertedData[3] = 0x3FF << 4;
+  //stuff some data with 0 to prevent garbage when clocks stabilize, then send configs
+  uhADCxConvertedData[0] = 0;
+  uhADCxConvertedData[1] = 0;
+  uhADCxConvertedData[2] = 0;
+  uhADCxConvertedData[3] = 0;
+  uhADCxConvertedData[4] = 0x1062 <<4;
+  uhADCxConvertedData[5] = 0x3FF << 4;
+  uhADCxConvertedData[6] = 0x1005 << 4;
+  uhADCxConvertedData[7] = 0x3FF << 4;
 
-  uhADCxConvertedData[4] = 0x1040 << 4;
+  uhADCxConvertedData[8] = 0x1040 << 4;
   //uhADCxConvertedData[0] = 1 << 5;
   //uhADCxConvertedData[1] = 1 << 6;
   
+  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc1_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
+  HAL_SPI_TransmitReceive_DMA(&hspi3, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc2_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
+
+
 
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
@@ -295,8 +318,6 @@ int main(void)
 
     HAL_Delay(100);
   // Transmit configuration using normal DMA mode
-  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc1_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
-
 
   
   // Wait for SPI1 DMA transmission to complete
@@ -321,8 +342,8 @@ int main(void)
   //HAL_SPI_Receive_DMA(&hspi1,(uint8_t*)adc1_rx_data, 15000);
 
   while(1){
-    if(adc_first_half_ready){
-      adc_first_half_ready = 0;
+    if(adc2_first_half_ready){
+      adc2_first_half_ready = 0;
       char buffer[300];
       //converted_data[0] = ((int16_t)adc1_rx_data[0]) << 10 | ((int16_t)adc1_rx_data[1]) << 2 | ((int16_t)adc1_rx_data[2]) >> 6;
       //converted_data[1] = ((int16_t)adc1_rx_data[2]) << 14 | ((int16_t)adc1_rx_data[3]) << 6 | ((int16_t)adc1_rx_data[4]) >> 4;
@@ -334,7 +355,7 @@ int main(void)
       // converted_data[4] = (int16_t)((adc1_rx_data[4]) >> 2);
 
       for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
-        converted_data[i] = (int16_t)(adc1_rx_data[i] >> 2);
+        converted_data[i] = (int16_t)(adc2_rx_data[i] >> 2);
       }
 
 
@@ -397,17 +418,17 @@ int main(void)
     //MX_LWIP_Process();
     //ethernetif_input(&gnetif);
     //sys_check_timeouts();
-    if(adc_first_half_ready){
+    if(adc1_first_half_ready){
       // Process first half of the buffer
       // For example, send the first 600 samples
       //udpClient_send((int16_t*)uhADCxConvertedData, 600);
       
-      adc_first_half_ready = 0;
-    }else if(adc_second_half_ready){
+      adc1_first_half_ready = 0;
+    }else if(adc1_second_half_ready){
       // Process second half of the buffer
       // For example, send the next 600 samples
      // udpClient_send((int16_t*)(uhADCxConvertedData + 600), 600);
-      adc_second_half_ready = 0;
+      adc1_second_half_ready = 0;
     }
     /* USER CODE END WHILE */
 
@@ -589,6 +610,53 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief SPI3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI3_Init(void)
+{
+
+  /* USER CODE BEGIN SPI3_Init 0 */
+
+  /* USER CODE END SPI3_Init 0 */
+
+  /* USER CODE BEGIN SPI3_Init 1 */
+
+  /* USER CODE END SPI3_Init 1 */
+  /* SPI3 parameter configuration*/
+  hspi3.Instance = SPI3;
+  hspi3.Init.Mode = SPI_MODE_SLAVE;
+  hspi3.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi3.Init.DataSize = SPI_DATASIZE_20BIT;
+  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi3.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi3.Init.NSS = SPI_NSS_HARD_INPUT;
+  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi3.Init.CRCPolynomial = 0x0;
+  hspi3.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  hspi3.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi3.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi3.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi3.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi3.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi3.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi3.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi3.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
+  hspi3.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  if (HAL_SPI_Init(&hspi3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI3_Init 2 */
+
+  /* USER CODE END SPI3_Init 2 */
 
 }
 
@@ -859,9 +927,15 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA1_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
 
 }
 
@@ -881,8 +955,8 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
