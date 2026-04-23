@@ -95,7 +95,7 @@ static void MX_SPI3_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define ADC_CONVERTED_DATA_BUFFER_SIZE 1000
+#define ADC_CONVERTED_DATA_BUFFER_SIZE 1280
 
 
 extern struct netif gnetif;
@@ -120,6 +120,8 @@ volatile uint8_t adc2_first_half_ready = 0;
 volatile uint8_t adc2_second_half_ready = 0;
 
 volatile int16_t converted_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
+volatile int16_t converted_data2[ADC_CONVERTED_DATA_BUFFER_SIZE];
+
 volatile uint16_t converted_data_index = 0;
 
 volatile uint8_t adc1_configured = 0;
@@ -128,7 +130,7 @@ void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
   if(hspi->Instance == SPI1) {
     if(!adc1_configured){
       adc1_configured = 1;
-      uint32_t channel_select[8] = {0, 0, 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0};
+      uint32_t channel_select[8] = { 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0, 0x0000 << 4, 0};
       for(int i = 0; i < 10; i++){
         uhADCxConvertedData[i] = channel_select[i % 8];
       }
@@ -283,7 +285,7 @@ int main(void)
   // uhADCxConvertedData[20] =  0;
 
  // uint32_t channel_select[5] = {0x4000, 0, 0x8000, 0, 0xC000, 0};
- uint32_t channel_select[8] = {0, 0, 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0};
+  uint32_t channel_select[8] = { 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0, 0x0000 << 4, 0};
  
  for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i ++){
     uhADCxConvertedData[i] = channel_select[i % 8];
@@ -306,7 +308,7 @@ int main(void)
   HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc1_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
   HAL_SPI_TransmitReceive_DMA(&hspi3, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc2_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
 
-
+  HAL_Delay(100);
 
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
@@ -316,55 +318,70 @@ int main(void)
 
   TIM1->CCR1 = 10;
 
-    HAL_Delay(100);
-  // Transmit configuration using normal DMA mode
+  HAL_Delay(100);
 
-  
-  // Wait for SPI1 DMA transmission to complete
-  //_HAL_DMA_DISABLE(&hdma_spi1_rx); // Disable SPI1 RX DMA before reconfiguring
-  //HAL_Delay(100);
-  //HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)uhADCxConvertedData, 21);
-  //_HAL_DMA_DISABLE(&hdma_spi1_rx); // Disable SPI1 RX DMA before reconfiguring
 
-  // Wait for SPI3 DMA transmission to complete
-  //while (HAL_SPI_GetState(&hspi3) != HAL_SPI_STATE_READY);
-  //HAL_Delay(100);
-  
-  // Switch DMA to circular mode for continuous reception
-  // Disable DMA before reconfiguring
-  //__HAL_DMA_DISABLE(&hdma_spi1_rx);
-  
-  // Enable circular mode for SPI1 RX DMA by setting the mode in the DMA stream register
-  //DMA1_Stream0->CR |= DMA_SxCR_CIRC;  // Enable circular mode for SPI1 RX
-  
-  //__HAL_DMA_ENABLE(&hdma_spi1_rx);
-  
-  //HAL_SPI_Receive_DMA(&hspi1,(uint8_t*)adc1_rx_data, 15000);
+  int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
 
   while(1){
-    if(adc2_first_half_ready){
+    if(adc1_first_half_ready && adc2_first_half_ready){
+      adc1_first_half_ready = 0;
       adc2_first_half_ready = 0;
-      char buffer[300];
-      //converted_data[0] = ((int16_t)adc1_rx_data[0]) << 10 | ((int16_t)adc1_rx_data[1]) << 2 | ((int16_t)adc1_rx_data[2]) >> 6;
-      //converted_data[1] = ((int16_t)adc1_rx_data[2]) << 14 | ((int16_t)adc1_rx_data[3]) << 6 | ((int16_t)adc1_rx_data[4]) >> 4;
+      // for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
+      //   converted_data[i] = (int16_t)(adc1_rx_data[i] >> 2);
+      //   converted_data2[i] = (int16_t)(adc2_rx_data[i] >> 2);
+      // }
+      //split up data into packed channels
+      const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
+      for(int channel = 0; channel < 16; channel++){
+        int src_channel = (channel < 8) ? channel : channel - 8;
+        int base_index = channel * samples_per_channel;
 
-      // converted_data[0] = (int16_t)((adc1_rx_data[0]) >> 2);
-      // converted_data[1] = (int16_t)((adc1_rx_data[1]) >> 2);
-      // converted_data[2] = (int16_t)((adc1_rx_data[2]) >> 2);
-      // converted_data[3] = (int16_t)((adc1_rx_data[3]) >> 2);
-      // converted_data[4] = (int16_t)((adc1_rx_data[4]) >> 2);
-
-      for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
-        converted_data[i] = (int16_t)(adc2_rx_data[i] >> 2);
+        if(channel < 8){
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i] = (int16_t)(adc1_rx_data[src_channel + (i * 8)] >> 2);
+          }
+        } else {
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i] = (int16_t)(adc2_rx_data[src_channel + (i * 8)] >> 2);
+          }
+        }
       }
-
-
-      //sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x, %x, %x\n", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
-      //sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
-      sprintf(buffer, "Received: %d, %d, %d, %d, %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3], converted_data[4], converted_data[5], converted_data[6], converted_data[7]);
-      //sprintf(buffer, "Received: %ld, %ld, %ld, %ld\n", adc1_rx_data[0], adc1_rx_data[1], adc1_rx_data[2], adc1_rx_data[3]);
+      char buffer[300];
+      
+      //sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d ;;; 1: %d %d %d %d %d %d %d %d ;;; 2: %d %d %d %d %d %d %d %d", adc_data[0], adc_data[1], adc_data[2], adc_data[3], adc_data[4], adc_data[5], adc_data[6], adc_data[7], adc_data[8], adc_data[9], adc_data[10], adc_data[11], adc_data[12], adc_data[13], adc_data[14], adc_data[15], adc1_rx_data[0] >> 2, adc1_rx_data[1] >> 2, adc1_rx_data[2] >> 2, adc1_rx_data[3] >> 2, adc1_rx_data[4] >> 2, adc1_rx_data[5] >> 2, adc1_rx_data[6] >> 2, adc1_rx_data[7] >> 2, adc2_rx_data[0] >> 2, adc2_rx_data[1] >> 2, adc2_rx_data[2] >> 2, adc2_rx_data[3] >> 2, adc2_rx_data[4] >> 2, adc2_rx_data[5] >> 2, adc2_rx_data[6] >> 2, adc2_rx_data[7] >> 2);
+      sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n" , adc_data[0*samples_per_channel], adc_data[1*samples_per_channel], adc_data[2*samples_per_channel], adc_data[3*samples_per_channel], adc_data[4*samples_per_channel], adc_data[5*samples_per_channel], adc_data[6*samples_per_channel], adc_data[7*samples_per_channel], adc_data[8*samples_per_channel], adc_data[9*samples_per_channel], adc_data[10*samples_per_channel], adc_data[11*samples_per_channel], adc_data[12*samples_per_channel], adc_data[13*samples_per_channel], adc_data[14*samples_per_channel], adc_data[15*samples_per_channel]);
       HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
-    }
+
+    } 
+
+
+    // if(adc1_first_half_ready){
+    //   adc1_first_half_ready = 0;
+
+    //   //int8_t delta_t = HAL_GetTick() - time_1;
+    //   char buffer[300];
+    //   //converted_data[0] = ((int16_t)adc1_rx_data[0]) << 10 | ((int16_t)adc1_rx_data[1]) << 2 | ((int16_t)adc1_rx_data[2]) >> 6;
+    //   //converted_data[1] = ((int16_t)adc1_rx_data[2]) << 14 | ((int16_t)adc1_rx_data[3]) << 6 | ((int16_t)adc1_rx_data[4]) >> 4;
+
+    //   // converted_data[0] = (int16_t)((adc1_rx_data[0]) >> 2);
+    //   // converted_data[1] = (int16_t)((adc1_rx_data[1]) >> 2);
+    //   // converted_data[2] = (int16_t)((adc1_rx_data[2]) >> 2);
+    //   // converted_data[3] = (int16_t)((adc1_rx_data[3]) >> 2);
+    //   // converted_data[4] = (int16_t)((adc1_rx_data[4]) >> 2);
+
+    //   for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
+    //     converted_data[i] = (int16_t)(adc1_rx_data[i] >> 2);
+    //   }
+
+
+    //   //sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x, %x, %x\n", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
+    //   //sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
+    //   //sprintf(buffer, "Received: %d, %d, %d, %d, %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3], converted_data[4], converted_data[5], converted_data[6], converted_data[7]);
+    //   sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[ADC_CONVERTED_DATA_BUFFER_SIZE-2], converted_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1], converted_data[0], converted_data[1]);
+    //   //sprintf(buffer, "%d\n", delta_t);
+    //   //sprintf(buffer, "Received: %ld, %ld, %ld, %ld\n", adc1_rx_data[0], adc1_rx_data[1], adc1_rx_data[2], adc1_rx_data[3]);
+    // }
 
 
     //   adc1_rx_data[i] = adc1_rx_data[i] >>2;
