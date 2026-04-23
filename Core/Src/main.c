@@ -101,7 +101,9 @@ extern struct netif gnetif;
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE] __attribute__((at(0x24000000))); // Place buffer in non-cacheable SRAM
 //uint16_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE]; // Place buffer in non-cacheable SRAM
 __attribute__((section(".adcarray"))) uint32_t uhADCxConvertedData[ADC_CONVERTED_DATA_BUFFER_SIZE];
-__attribute__((section(".adcarray"))) uint32_t adc_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
+__attribute__((section(".adcarray"))) uint32_t adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
+__attribute__((section(".adcarray"))) uint32_t adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
+
 
 
 /* USER CODE END PV */
@@ -111,7 +113,7 @@ volatile uint8_t adc_first_half_ready = 0;
 volatile uint8_t adc_second_half_ready = 0;
 volatile uint8_t spi_transfer_complete = 0;
 
-volatile int16_t converted_data[200];
+volatile int16_t converted_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
 volatile uint16_t converted_data_index = 0;
 
 volatile uint8_t adc1_configured = 0;
@@ -120,9 +122,9 @@ void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
   if(hspi->Instance == SPI1) {
     if(!adc1_configured){
       adc1_configured = 1;
-      uint32_t channel_select[4] = {0x4000 << 4, 0x8000 << 4, 0xC000 << 4, 0};
-      for(int i = 0; i < 5; i++){
-        uhADCxConvertedData[i] = channel_select[i % 4];
+      uint32_t channel_select[8] = {0, 0, 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0};
+      for(int i = 0; i < 8; i++){
+        uhADCxConvertedData[i] = channel_select[i % 8];
       }
     }
 
@@ -132,7 +134,7 @@ void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
      
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
     if(hspi->Instance == SPI1) {
-        //HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc_rx_data, 15000);
+        //HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc1_rx_data, 15000);
         adc_second_half_ready = 1;
     }
 }
@@ -232,21 +234,10 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t startTick = HAL_GetTick();
-  int16_t count = 0;
-  uint32_t data_to_tx = 0x1002 << 4;
 
-  uint16_t setting_1 = 0x1062;
-  uint16_t setting_2 = 0x3FF;
-  uint16_t setting_3 = 0x1005;
-  uint16_t setting_4 = 0x3FF;
-  // uint16_t setting_5 = 0x1009;
-  // uint16_t setting_6 = 0x31B0;
-  //uint16_t setting_6 = 0x3000;
-  uint16_t setting_5 = 0x1060;
   for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
     uhADCxConvertedData[i] = 0;
-    adc_rx_data[i] = 0;
+    adc1_rx_data[i] = 0;
   }
 
   // uhADCxConvertedData[0] = (int8_t)(setting_1 >> 8);
@@ -277,9 +268,11 @@ int main(void)
   // uhADCxConvertedData[19] = (int8_t)setting_7;
   // uhADCxConvertedData[20] =  0;
 
-  uint32_t channel_select[4] = {0x4000, 0x8000, 0xC000, 0};
-  for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
-    uhADCxConvertedData[i] = channel_select[i % 4];
+ // uint32_t channel_select[5] = {0x4000, 0, 0x8000, 0, 0xC000, 0};
+ uint32_t channel_select[8] = {0, 0, 0x4000 << 4, 0, 0x8000 << 4, 0, 0xC000 << 4, 0};
+ 
+ for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i ++){
+    uhADCxConvertedData[i] = channel_select[i % 8];
   }
 
   uhADCxConvertedData[0] = 0x1062 <<4;
@@ -302,7 +295,7 @@ int main(void)
 
     HAL_Delay(100);
   // Transmit configuration using normal DMA mode
-  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
+  HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)&uhADCxConvertedData, (uint8_t*)adc1_rx_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
 
 
   
@@ -325,42 +318,43 @@ int main(void)
   
   //__HAL_DMA_ENABLE(&hdma_spi1_rx);
   
-  //HAL_SPI_Receive_DMA(&hspi1,(uint8_t*)adc_rx_data, 15000);
+  //HAL_SPI_Receive_DMA(&hspi1,(uint8_t*)adc1_rx_data, 15000);
 
   while(1){
     if(adc_first_half_ready){
       adc_first_half_ready = 0;
-      char buffer[50];
-      //converted_data[0] = ((int16_t)adc_rx_data[0]) << 10 | ((int16_t)adc_rx_data[1]) << 2 | ((int16_t)adc_rx_data[2]) >> 6;
-      //converted_data[1] = ((int16_t)adc_rx_data[2]) << 14 | ((int16_t)adc_rx_data[3]) << 6 | ((int16_t)adc_rx_data[4]) >> 4;
-      uint8_t bytes[50];
-      for(int i = 0; i < 50; i++){
-        bytes[i] = adc_rx_data[i/4] >> (8 * (3 - (i % 4))) & 0xFF; // Extract byte from uint32_t
+      char buffer[300];
+      //converted_data[0] = ((int16_t)adc1_rx_data[0]) << 10 | ((int16_t)adc1_rx_data[1]) << 2 | ((int16_t)adc1_rx_data[2]) >> 6;
+      //converted_data[1] = ((int16_t)adc1_rx_data[2]) << 14 | ((int16_t)adc1_rx_data[3]) << 6 | ((int16_t)adc1_rx_data[4]) >> 4;
 
+      // converted_data[0] = (int16_t)((adc1_rx_data[0]) >> 2);
+      // converted_data[1] = (int16_t)((adc1_rx_data[1]) >> 2);
+      // converted_data[2] = (int16_t)((adc1_rx_data[2]) >> 2);
+      // converted_data[3] = (int16_t)((adc1_rx_data[3]) >> 2);
+      // converted_data[4] = (int16_t)((adc1_rx_data[4]) >> 2);
+
+      for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
+        converted_data[i] = (int16_t)(adc1_rx_data[i] >> 2);
       }
-      converted_data[0] = (int16_t)((adc_rx_data[0]) >> 2);
-      converted_data[1] = (int16_t)((adc_rx_data[1]) >> 2);
-      converted_data[2] = (int16_t)((adc_rx_data[2]) >> 2);
-      converted_data[3] = (int16_t)((adc_rx_data[3]) >> 2);
-      converted_data[4] = (int16_t)((adc_rx_data[4]) >> 2);
+
 
       //sprintf(buffer, "Received: %x, %x, %x, %x, %x, %x, %x, %x\n", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
       //sprintf(buffer, "Received: %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3]);
-      sprintf(buffer, "Received: %d, %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3], converted_data[4]);
-      //sprintf(buffer, "Received: %ld, %ld, %ld, %ld\n", adc_rx_data[0], adc_rx_data[1], adc_rx_data[2], adc_rx_data[3]);
+      sprintf(buffer, "Received: %d, %d, %d, %d, %d, %d, %d, %d\n", converted_data[0], converted_data[1], converted_data[2], converted_data[3], converted_data[4], converted_data[5], converted_data[6], converted_data[7]);
+      //sprintf(buffer, "Received: %ld, %ld, %ld, %ld\n", adc1_rx_data[0], adc1_rx_data[1], adc1_rx_data[2], adc1_rx_data[3]);
       HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
     }
 
 
-    //   adc_rx_data[i] = adc_rx_data[i] >>2;
-    //   converted_data[i] = (int16_t)adc_rx_data[i];
+    //   adc1_rx_data[i] = adc1_rx_data[i] >>2;
+    //   converted_data[i] = (int16_t)adc1_rx_data[i];
     // }
         // Wait for DMA to complete
 
 
-    // converted_data[1] = (int16_t)adc_rx_data[4] << 8 | adc_rx_data[5];
-    // converted_data[2] = (int16_t)adc_rx_data[7] << 8 | adc_rx_data[8];
-    // converted_data[3] = (int16_t)adc_rx_data[10] << 8 | adc_rx_data[11];
+    // converted_data[1] = (int16_t)adc1_rx_data[4] << 8 | adc1_rx_data[5];
+    // converted_data[2] = (int16_t)adc1_rx_data[7] << 8 | adc1_rx_data[8];
+    // converted_data[3] = (int16_t)adc1_rx_data[10] << 8 | adc1_rx_data[11];
 
     //HAL_Delay(10);
     
