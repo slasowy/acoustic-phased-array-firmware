@@ -152,6 +152,7 @@ void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
      
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
     if(hspi->Instance == SPI1) {
+        packet_ID++;
         //HAL_SPI_TransmitReceive_DMA(&hspi1, (uint8_t*)uhADCxConvertedData, (uint8_t*)adc1_rx_data, 15000);
         adc1_second_half_ready = 1;
     }
@@ -285,27 +286,37 @@ int main(void)
 
   HAL_Delay(100);
 
+  uint8_t a1_first = 0;
 
-  int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE];
+  int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE + 1]; // +1 for packet ID at the start
 
   while(1){
     if(adc1_first_half_ready && adc2_first_half_ready){
       adc1_first_half_ready = 0;
       adc2_first_half_ready = 0;
-      // for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
-      //   converted_data[i] = (int16_t)(adc1_rx_data[i] >> 2);
-      //   converted_data2[i] = (int16_t)(adc2_rx_data[i] >> 2);
-      // }
-      //split up data into packed channels
 
-      uint8_t a1_first = 0;
+
       uint8_t a2_first = 0;
-      if(adc1_rx_data[0] & (1 << 18)){
+
+      int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      if((adc1_rx_data[0] & (1 << 18))){
         a1_first = 1;
-
+        adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
+        adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[i-1] >> 2;
+          adc2_shifted[i] = adc2_rx_data[i-1] >> 2;
+        }
+      }else{
+        a1_first = 0;
+        adc1_shifted[0] = adc1_rx_data[0] >> 2;
+        adc2_shifted[0] = adc2_rx_data[0] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[i] >> 2;
+          adc2_shifted[i] = adc2_rx_data[i] >> 2;
+        }
       }
-
-
       const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
       for(int channel = 0; channel < 16; channel++){
         int src_channel = (channel < 8) ? channel : channel - 8;
@@ -313,23 +324,75 @@ int main(void)
 
         if(channel < 8){
           for(int i = 0; i < samples_per_channel; i++){
-            adc_data[base_index + i] = (int16_t)(adc1_rx_data[src_channel + (i * 8)] >> 2);
+            adc_data[base_index + i + 1] = (adc1_shifted[src_channel + (i * 8)]);
           }
         } else {
           for(int i = 0; i < samples_per_channel; i++){
-            adc_data[base_index + i] = (int16_t)(adc2_rx_data[src_channel + (i * 8)] >> 2);
+            adc_data[base_index + i + 1] = (adc2_shifted[src_channel + (i * 8)]);
           }
         }
       }
       char buffer[300];
-      adc_data[0] = (uint16_t)packet_ID;
-      sprintf(buffer, "a:_first:%d %d\n", a1_first, a2_first);
-      //sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d ;;; 1: %d %d %d %d %d %d %d %d ;;; 2: %d %d %d %d %d %d %d %d", adc_data[0], adc_data[1], adc_data[2], adc_data[3], adc_data[4], adc_data[5], adc_data[6], adc_data[7], adc_data[8], adc_data[9], adc_data[10], adc_data[11], adc_data[12], adc_data[13], adc_data[14], adc_data[15], adc1_rx_data[0] >> 2, adc1_rx_data[1] >> 2, adc1_rx_data[2] >> 2, adc1_rx_data[3] >> 2, adc1_rx_data[4] >> 2, adc1_rx_data[5] >> 2, adc1_rx_data[6] >> 2, adc1_rx_data[7] >> 2, adc2_rx_data[0] >> 2, adc2_rx_data[1] >> 2, adc2_rx_data[2] >> 2, adc2_rx_data[3] >> 2, adc2_rx_data[4] >> 2, adc2_rx_data[5] >> 2,adc2_rx_data[6] >> 2,adc2_rx_data[7] >> 2);
-      //udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE);
-      //sprintf(buffer, "a: %lu b: %lu ci: %d combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n" , adc1_rx_data[0], adc1_rx_data[1], a_first, adc_data[0*samples_per_channel], adc_data[1*samples_per_channel], adc_data[2*samples_per_channel], adc_data[3*samples_per_channel], adc_data[4*samples_per_channel], adc_data[5*samples_per_channel], adc_data[6*samples_per_channel], adc_data[7*samples_per_channel], adc_data[8*samples_per_channel], adc_data[9*samples_per_channel], adc_data[10*samples_per_channel], adc_data[11*samples_per_channel], adc_data[12*samples_per_channel], adc_data[13*samples_per_channel], adc_data[14*samples_per_channel], adc_data[15*samples_per_channel]);
-      HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+      adc_data[0] = packet_ID;
+      //adc_data[0] = (uint16_t)packet_ID;
 
-    } 
+      // int16_t test_1 = adc1_shifted[0] >> 2;
+      // int16_t test_2 = adc1_shifted[1] >> 2;
+      //sprintf(buffer, "a:_first:%d ch1: %d ch2: %d\n", a1_first, test_1, test_2);
+      //sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d ;;; 1: %d %d %d %d %d %d %d %d ;;; 2: %d %d %d %d %d %d %d %d", adc_data[0], adc_data[1], adc_data[2], adc_data[3], adc_data[4], adc_data[5], adc_data[6], adc_data[7], adc_data[8], adc_data[9], adc_data[10], adc_data[11], adc_data[12], adc_data[13], adc_data[14], adc_data[15], adc1_rx_data[0] >> 2, adc1_rx_data[1] >> 2, adc1_rx_data[2] >> 2, adc1_rx_data[3] >> 2, adc1_rx_data[4] >> 2, adc1_rx_data[5] >> 2, adc1_rx_data[6] >> 2, adc1_rx_data[7] >> 2, adc2_rx_data[0] >> 2, adc2_rx_data[1] >> 2, adc2_rx_data[2] >> 2, adc2_rx_data[3] >> 2, adc2_rx_data[4] >> 2, adc2_rx_data[5] >> 2,adc2_rx_data[6] >> 2,adc2_rx_data[7] >> 2);
+      udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
+      //sprintf(buffer, "a: %lu b: %lu ci: %d combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n" , adc1_rx_data[0], adc1_rx_data[1], a1_first, adc_data[0*samples_per_channel], adc_data[1*samples_per_channel], adc_data[2*samples_per_channel], adc_data[3*samples_per_channel], adc_data[4*samples_per_channel], adc_data[5*samples_per_channel], adc_data[6*samples_per_channel], adc_data[7*samples_per_channel], adc_data[8*samples_per_channel], adc_data[9*samples_per_channel], adc_data[10*samples_per_channel], adc_data[11*samples_per_channel], adc_data[12*samples_per_channel], adc_data[13*samples_per_channel], adc_data[14*samples_per_channel], adc_data[15*samples_per_channel]);
+      //HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+
+    }else if(adc1_second_half_ready && adc2_second_half_ready){
+      adc1_second_half_ready = 0;
+      adc2_second_half_ready = 0;
+
+
+      int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      if(a1_first){
+        adc1_shifted[0] = adc1_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
+        adc2_shifted[0] = adc2_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)-1] >> 2;
+          adc2_shifted[i] = adc2_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)-1] >> 2;
+        }
+      }else{
+        adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE/2] >> 2;
+        adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE/2] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)] >> 2;
+          adc2_shifted[i] = adc2_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)] >> 2;
+        }
+      }
+      const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
+      for(int channel = 0; channel < 16; channel++){
+        int src_channel = (channel < 8) ? channel : channel - 8;
+        int base_index = channel * samples_per_channel;
+
+        if(channel < 8){
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i + 1] = (adc1_shifted[src_channel + (i * 8)]);
+          }
+        } else {
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i + 1] = (adc2_shifted[src_channel + (i * 8)]);
+          }
+        }
+      }
+      char buffer[300];
+      adc_data[0] = packet_ID;
+      //adc_data[0] = (uint16_t)packet_ID;
+
+      // int16_t test_1 = adc1_shifted[0] >> 2;
+      // int16_t test_2 = adc1_shifted[1] >> 2;
+      //sprintf(buffer, "a:_first:%d ch1: %d ch2: %d\n", a1_first, test_1, test_2);
+      //sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d ;;; 1: %d %d %d %d %d %d %d %d ;;; 2: %d %d %d %d %d %d %d %d", adc_data[0], adc_data[1], adc_data[2], adc_data[3], adc_data[4], adc_data[5], adc_data[6], adc_data[7], adc_data[8], adc_data[9], adc_data[10], adc_data[11], adc_data[12], adc_data[13], adc_data[14], adc_data[15], adc1_rx_data[0] >> 2, adc1_rx_data[1] >> 2, adc1_rx_data[2] >> 2, adc1_rx_data[3] >> 2, adc1_rx_data[4] >> 2, adc1_rx_data[5] >> 2, adc1_rx_data[6] >> 2, adc1_rx_data[7] >> 2, adc2_rx_data[0] >> 2, adc2_rx_data[1] >> 2, adc2_rx_data[2] >> 2, adc2_rx_data[3] >> 2, adc2_rx_data[4] >> 2, adc2_rx_data[5] >> 2,adc2_rx_data[6] >> 2,adc2_rx_data[7] >> 2);
+      udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
+      //sprintf(buffer, "a: %lu b: %lu ci: %d combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n" , adc1_rx_data[0], adc1_rx_data[1], a1_first, adc_data[0*samples_per_channel], adc_data[1*samples_per_channel], adc_data[2*samples_per_channel], adc_data[3*samples_per_channel], adc_data[4*samples_per_channel], adc_data[5*samples_per_channel], adc_data[6*samples_per_channel], adc_data[7*samples_per_channel], adc_data[8*samples_per_channel], adc_data[9*samples_per_channel], adc_data[10*samples_per_channel], adc_data[11*samples_per_channel], adc_data[12*samples_per_channel], adc_data[13*samples_per_channel], adc_data[14*samples_per_channel], adc_data[15*samples_per_channel]);
+      //HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+    }
     MX_LWIP_Process();
   }
   /* USER CODE END 3 */
