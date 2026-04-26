@@ -137,10 +137,10 @@ void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
     // }
     if(!adc1_configured){
       adc1_configured = 1;
-      uint32_t channel_select[8] = { 0x4000 << 4, 0x4000 << 4, 0x8000 << 4, 0x8000 << 4, 0xC000 << 4, 0xC000 << 4, 0x0000 << 4, 0x0000 << 4};
-      for(int i = 0; i < 10; i++){
-        uhADCxConvertedData[i] = channel_select[i % 8];
-      }
+      // uint32_t channel_select[8] = { 0x4000 << 4, 0x4000 << 4, 0x8000 << 4, 0x8000 << 4, 0xC000 << 4, 0xC000 << 4, 0x0000 << 4, 0x0000 << 4};
+      // for(int i = 0; i < 10; i++){
+      //   uhADCxConvertedData[i] = channel_select[i % 8];
+      // }
     }
     adc1_first_half_ready = 1;
   }
@@ -172,11 +172,11 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  // uint32_t pseudodelay = 0;
-  // while(pseudodelay++ < 0xFFFFFF)
-  // {
-  //   __NOP();
-  // }
+  uint32_t pseudodelay = 0;
+  while(pseudodelay++ < 0xFFFFFF)
+  {
+    __NOP();
+  }
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -233,6 +233,7 @@ int main(void)
   MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+  HAL_Delay(1000);
 
   udpClient_connect();
   HAL_Delay(1000);
@@ -281,12 +282,34 @@ int main(void)
   TIM1->CCR1 = 10;
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
   TIM8->CCR1 = 5;
+  uint8_t a1_first = 0;
+  uint8_t settling_delay = 0;
+  while(settling_delay < 200){
+    if(adc1_first_half_ready){
+      adc1_first_half_ready = 0;
+      settling_delay++;
+    }
+  }
 
+  if(!(adc1_rx_data[0] & (1 << 18))){
+    a1_first = 1;
+    uint32_t channel_select[8] = { 0x4000 << 4, 0x4000 << 4, 0x8000 << 4, 0x8000 << 4, 0xC000 << 4, 0xC000 << 4, 0x0000 << 4, 0x0000 << 4};
+ 
+    for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i ++){
+        uhADCxConvertedData[i] = channel_select[i % 8];
+    }
+  }else{
+    a1_first = 0;
+    uint32_t channel_select[8] = {0x4000 << 4, 0x8000 << 4, 0x8000 << 4, 0xC000 << 4, 0xC000 << 4, 0x0000 << 4, 0x0000 << 4, 0x4000 << 4};
+ 
+    for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i ++){
+        uhADCxConvertedData[i] = channel_select[i % 8];
+    }
 
+  }
 
   HAL_Delay(100);
 
-  uint8_t a1_first = 0;
 
   int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE + 1]; // +1 for packet ID at the start
 
@@ -300,8 +323,7 @@ int main(void)
 
       int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
       int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
-      if((adc1_rx_data[0] & (1 << 18))){
-        a1_first = 1;
+      if(!a1_first){
         adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
         adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
         for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
@@ -309,7 +331,6 @@ int main(void)
           adc2_shifted[i] = adc2_rx_data[i-1] >> 2;
         }
       }else{
-        a1_first = 0;
         adc1_shifted[0] = adc1_rx_data[0] >> 2;
         adc2_shifted[0] = adc2_rx_data[0] >> 2;
         for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
@@ -351,7 +372,7 @@ int main(void)
 
       int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
       int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
-      if(a1_first){
+      if(!a1_first){
         adc1_shifted[0] = adc1_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
         adc2_shifted[0] = adc2_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
         for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
