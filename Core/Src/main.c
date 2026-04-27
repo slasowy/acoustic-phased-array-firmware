@@ -129,6 +129,11 @@ volatile uint8_t adc1_configured = 0;
 
 volatile uint8_t packet_ID = 0;
 
+uint8_t a1_first = 0;
+int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE + 1]; // +1 for packet ID at the start
+
+
+
 void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
   if(hspi->Instance == SPI1) {
     packet_ID++;
@@ -161,6 +166,8 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
         adc2_second_half_ready = 1;
     }
 }
+
+void ADC_handle(void);
 
 /* USER CODE END 0 */
 
@@ -282,7 +289,6 @@ int main(void)
   TIM1->CCR1 = 10;
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
   TIM8->CCR1 = 5;
-  uint8_t a1_first = 0;
   uint8_t settling_delay = 0;
   while(settling_delay < 200){
     if(adc1_first_half_ready){
@@ -311,9 +317,18 @@ int main(void)
   HAL_Delay(100);
 
 
-  int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE + 1]; // +1 for packet ID at the start
 
   while(1){
+    ADC_handle();
+
+    MX_LWIP_Process();
+  }
+  /* USER CODE END 3 */
+}
+
+
+
+void ADC_handle(){
     if(adc1_first_half_ready && adc2_first_half_ready){
       adc1_first_half_ready = 0;
       adc2_first_half_ready = 0;
@@ -353,17 +368,9 @@ int main(void)
           }
         }
       }
-      char buffer[300];
       adc_data[0] = packet_ID;
-      //adc_data[0] = (uint16_t)packet_ID;
-
-      // int16_t test_1 = adc1_shifted[0] >> 2;
-      // int16_t test_2 = adc1_shifted[1] >> 2;
-      //sprintf(buffer, "a:_first:%d ch1: %d ch2: %d\n", a1_first, test_1, test_2);
-      //sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d ;;; 1: %d %d %d %d %d %d %d %d ;;; 2: %d %d %d %d %d %d %d %d", adc_data[0], adc_data[1], adc_data[2], adc_data[3], adc_data[4], adc_data[5], adc_data[6], adc_data[7], adc_data[8], adc_data[9], adc_data[10], adc_data[11], adc_data[12], adc_data[13], adc_data[14], adc_data[15], adc1_rx_data[0] >> 2, adc1_rx_data[1] >> 2, adc1_rx_data[2] >> 2, adc1_rx_data[3] >> 2, adc1_rx_data[4] >> 2, adc1_rx_data[5] >> 2, adc1_rx_data[6] >> 2, adc1_rx_data[7] >> 2, adc2_rx_data[0] >> 2, adc2_rx_data[1] >> 2, adc2_rx_data[2] >> 2, adc2_rx_data[3] >> 2, adc2_rx_data[4] >> 2, adc2_rx_data[5] >> 2,adc2_rx_data[6] >> 2,adc2_rx_data[7] >> 2);
       udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
-      //sprintf(buffer, "a: %lu b: %lu ci: %d combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n" , adc1_rx_data[0], adc1_rx_data[1], a1_first, adc_data[0*samples_per_channel], adc_data[1*samples_per_channel], adc_data[2*samples_per_channel], adc_data[3*samples_per_channel], adc_data[4*samples_per_channel], adc_data[5*samples_per_channel], adc_data[6*samples_per_channel], adc_data[7*samples_per_channel], adc_data[8*samples_per_channel], adc_data[9*samples_per_channel], adc_data[10*samples_per_channel], adc_data[11*samples_per_channel], adc_data[12*samples_per_channel], adc_data[13*samples_per_channel], adc_data[14*samples_per_channel], adc_data[15*samples_per_channel]);
-      //HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+
 
     }else if(adc1_second_half_ready && adc2_second_half_ready){
       adc1_second_half_ready = 0;
@@ -402,21 +409,9 @@ int main(void)
           }
         }
       }
-      char buffer[300];
       adc_data[0] = packet_ID;
-      //adc_data[0] = (uint16_t)packet_ID;
-
-      // int16_t test_1 = adc1_shifted[0] >> 2;
-      // int16_t test_2 = adc1_shifted[1] >> 2;
-      //sprintf(buffer, "a:_first:%d ch1: %d ch2: %d\n", a1_first, test_1, test_2);
-      //sprintf(buffer, "combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d ;;; 1: %d %d %d %d %d %d %d %d ;;; 2: %d %d %d %d %d %d %d %d", adc_data[0], adc_data[1], adc_data[2], adc_data[3], adc_data[4], adc_data[5], adc_data[6], adc_data[7], adc_data[8], adc_data[9], adc_data[10], adc_data[11], adc_data[12], adc_data[13], adc_data[14], adc_data[15], adc1_rx_data[0] >> 2, adc1_rx_data[1] >> 2, adc1_rx_data[2] >> 2, adc1_rx_data[3] >> 2, adc1_rx_data[4] >> 2, adc1_rx_data[5] >> 2, adc1_rx_data[6] >> 2, adc1_rx_data[7] >> 2, adc2_rx_data[0] >> 2, adc2_rx_data[1] >> 2, adc2_rx_data[2] >> 2, adc2_rx_data[3] >> 2, adc2_rx_data[4] >> 2, adc2_rx_data[5] >> 2,adc2_rx_data[6] >> 2,adc2_rx_data[7] >> 2);
       udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
-      //sprintf(buffer, "a: %lu b: %lu ci: %d combined: %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d\n" , adc1_rx_data[0], adc1_rx_data[1], a1_first, adc_data[0*samples_per_channel], adc_data[1*samples_per_channel], adc_data[2*samples_per_channel], adc_data[3*samples_per_channel], adc_data[4*samples_per_channel], adc_data[5*samples_per_channel], adc_data[6*samples_per_channel], adc_data[7*samples_per_channel], adc_data[8*samples_per_channel], adc_data[9*samples_per_channel], adc_data[10*samples_per_channel], adc_data[11*samples_per_channel], adc_data[12*samples_per_channel], adc_data[13*samples_per_channel], adc_data[14*samples_per_channel], adc_data[15*samples_per_channel]);
-      //HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
     }
-    MX_LWIP_Process();
-  }
-  /* USER CODE END 3 */
 }
 
 /**
