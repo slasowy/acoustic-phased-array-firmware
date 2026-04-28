@@ -214,6 +214,11 @@ SECTIONS
     *(.Rx_PoolSection) 
   } >RAM_D2
 
+.dma_buffers (NOLOAD) :
+{
+    *(.dma_buffers)
+} >RAM
+
   
   
   /* Remove information from the standard libraries */

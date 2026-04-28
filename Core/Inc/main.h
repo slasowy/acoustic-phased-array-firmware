@@ -69,6 +69,8 @@ void Error_Handler(void);
 #define ADC_CS_GPIO_Port GPIOE
 #define PWM1_Pin GPIO_PIN_12
 #define PWM1_GPIO_Port GPIOD
+#define PWM2_Pin GPIO_PIN_13
+#define PWM2_GPIO_Port GPIOD
 
 /* USER CODE BEGIN Private defines */
 
