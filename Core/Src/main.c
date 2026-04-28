@@ -69,8 +69,14 @@ DMA_HandleTypeDef hdma_spi3_rx;
 DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim5;
 TIM_HandleTypeDef htim8;
+TIM_HandleTypeDef htim16;
+TIM_HandleTypeDef htim23;
+TIM_HandleTypeDef htim24;
 
 UART_HandleTypeDef huart3;
 
@@ -90,13 +96,19 @@ static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI3_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM4_Init(void);
+static void MX_TIM5_Init(void);
+static void MX_TIM23_Init(void);
+static void MX_TIM24_Init(void);
+static void MX_TIM16_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define ADC_CONVERTED_DATA_BUFFER_SIZE 640
+#define ADC_CONVERTED_DATA_BUFFER_SIZE 500
 
 
 extern struct netif gnetif;
@@ -132,7 +144,15 @@ volatile uint8_t packet_ID = 0;
 uint8_t a1_first = 0;
 int16_t adc_data[ADC_CONVERTED_DATA_BUFFER_SIZE + 1]; // +1 for packet ID at the start
 
+volatile uint8_t PWM_buffer[1000];
+volatile uint16_t PWM_index = 0;
 
+volatile uint8_t time_int;
+
+uint8_t pin_state[256];
+
+#define PD12_SET  (1UL << 12)
+#define PD12_CLR  (1UL << 28)
 
 void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi){
   if(hspi->Instance == SPI1) {
@@ -167,6 +187,65 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi){
     }
 }
 
+// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
+// {
+//   if(htim->Instance == TIM3){
+//     // TIM4->CCR1 = (uint32_t)PWM_buffer[PWM_index];
+//     // if(PWM_index >= 1000){
+//     //   PWM_index = 0;
+//     // }
+//     // PWM_index++;
+//     //HAL_GPIO_TogglePin(PWM1_GPIO_Port, PWM1_Pin);
+//     time_int++;
+//   }
+
+// }
+
+void System_Init(void) {
+    // Enable clocks
+    RCC->AHB1ENR  |= RCC_AHB1ENR_DMA1EN;
+    RCC->AHB4ENR  |= RCC_AHB4ENR_GPIODEN;
+    RCC->APB1LENR |= RCC_APB1LENR_TIM3EN;
+    __DSB();
+
+    // PD12 as fast output
+    GPIOD->MODER   &= ~(3UL << 24);
+    GPIOD->MODER   |=  (1UL << 24); // Output
+    GPIOD->OSPEEDR |=  (3UL << 24); // Very high speed
+}
+
+void DMA1_Stream2_Init(void) {
+    // Disable stream before configuring
+    DMA1_Stream2->CR &= ~DMA_SxCR_EN;
+    while (DMA1_Stream2->CR & DMA_SxCR_EN); // Wait for disable
+
+    // DMAMUX1 Channel 2 — TIM3 update event request ID = 27
+    // (Verify in RM Table 110 — TIM3_UP is typically 27 for DMAMUX1)
+    DMAMUX1_Channel2->CCR = 27;
+
+    DMA1_Stream2->PAR  = (uint32_t)&GPIOD->BSRR;   // Destination
+    DMA1_Stream2->M0AR = (uint32_t)uhADCxConvertedData;  // Source
+    DMA1_Stream2->NDTR = ADC_CONVERTED_DATA_BUFFER_SIZE;
+
+    DMA1_Stream2->CR =
+        DMA_SxCR_PL_1    |  // High priority
+        DMA_SxCR_MSIZE_1 |  // 32-bit memory
+        DMA_SxCR_PSIZE_1 |  // 32-bit peripheral
+        DMA_SxCR_MINC    |  // Increment through buffer
+        DMA_SxCR_CIRC    |  // Circular mode
+        DMA_SxCR_DIR_0   |  // Memory → peripheral
+        DMA_SxCR_EN;        // Enable
+}
+
+void TIM3_Init(void) {
+    // APB1 timer clock — on STM32H723 typically 275 MHz
+    // 275,000,000 / 2,000,000 = 137.5 → ARR = 136 (≈ 2.007 MHz)
+    TIM3->PSC  = 0;
+    TIM3->ARR  = 9;
+    TIM3->DIER |= TIM_DIER_UDE;   // DMA request on update event
+    TIM3->CR1  |= TIM_CR1_ARPE;
+    TIM3->CR1  |= TIM_CR1_CEN;    // Start
+}
 void ADC_handle(void);
 
 /* USER CODE END 0 */
@@ -179,11 +258,11 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  uint32_t pseudodelay = 0;
-  while(pseudodelay++ < 0xFFFFFF)
-  {
-    __NOP();
-  }
+  // uint32_t pseudodelay = 0;
+  // while(pseudodelay++ < 0xFFFFFF)
+  // {
+  //   __NOP();
+  // }
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -217,11 +296,17 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM8_Init();
   MX_LWIP_Init();
-  MX_TIM3_Init();
+  //MX_TIM3_Init();
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_USART3_UART_Init();
   MX_SPI3_Init();
+  MX_TIM2_Init();
+  MX_TIM4_Init();
+  MX_TIM5_Init();
+  MX_TIM23_Init();
+  MX_TIM24_Init();
+  MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
   // filepath: Core/Src/main.c
   // Enable NVIC for TIM8 update interrupt
@@ -244,22 +329,43 @@ int main(void)
 
   udpClient_connect();
   HAL_Delay(1000);
+  HAL_GPIO_WritePin(RX_EN_SIG_GPIO_Port, RX_EN_SIG_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(RX_EN_REF_GPIO_Port, RX_EN_REF_Pin, GPIO_PIN_RESET);
 
+  HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, GPIO_PIN_SET);
 
-  HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(RX_EN_SIG_GPIO_Port, RX_EN_SIG_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(RX_EN_REF_GPIO_Port, RX_EN_REF_Pin, GPIO_PIN_SET);
   
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-
+  float time_step = 1.0 / 20000000.0;
   for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i++){
-    uhADCxConvertedData[i] = 0;
-    adc1_rx_data[i] = 0;
+    float time = time_step * i;
+    float sine = sinf(2*3.14 * 40000 * time);
+    if(sine > 0){
+      uhADCxConvertedData[i] = PD12_SET;
+    }else{
+      uhADCxConvertedData[i] = PD12_CLR;
+
+    }
+    
   }
 
+  System_Init();
+  DMA1_Stream2_Init();
+  TIM3_Init();
+
+  //HAL_TIM_Base_Start_IT(&htim3);
+
+  while(1){
+    // if(pin_state[time_int]){
+     //PWM1_GPIO_Port->BSRR = PWM1_Pin;
+
+    // }else{
+    //PWM1_GPIO_Port->BSRR = (uint32_t)PWM1_Pin << 16;
+
+    // }
+  }
+//  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+
+  while(1){};
   uint32_t channel_select[8] = { 0x4000 << 4, 0x4000 << 4, 0x8000 << 4, 0x8000 << 4, 0xC000 << 4, 0xC000 << 4, 0x0000 << 4, 0x0000 << 4};
  
  for(int i = 0; i < ADC_CONVERTED_DATA_BUFFER_SIZE; i ++){
@@ -316,102 +422,21 @@ int main(void)
 
   HAL_Delay(100);
 
+  /* USER CODE END 2 */
 
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
 
-  while(1){
     ADC_handle();
-
     MX_LWIP_Process();
+
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-}
-
-
-
-void ADC_handle(){
-    if(adc1_first_half_ready && adc2_first_half_ready){
-      adc1_first_half_ready = 0;
-      adc2_first_half_ready = 0;
-
-
-      uint8_t a2_first = 0;
-
-      int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
-      int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
-      if(!a1_first){
-        adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
-        adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
-        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
-          adc1_shifted[i] = adc1_rx_data[i-1] >> 2;
-          adc2_shifted[i] = adc2_rx_data[i-1] >> 2;
-        }
-      }else{
-        adc1_shifted[0] = adc1_rx_data[0] >> 2;
-        adc2_shifted[0] = adc2_rx_data[0] >> 2;
-        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
-          adc1_shifted[i] = adc1_rx_data[i] >> 2;
-          adc2_shifted[i] = adc2_rx_data[i] >> 2;
-        }
-      }
-      const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
-      for(int channel = 0; channel < 16; channel++){
-        int src_channel = (channel < 8) ? channel : channel - 8;
-        int base_index = channel * samples_per_channel;
-
-        if(channel < 8){
-          for(int i = 0; i < samples_per_channel; i++){
-            adc_data[base_index + i + 1] = (adc1_shifted[src_channel + (i * 8)]);
-          }
-        } else {
-          for(int i = 0; i < samples_per_channel; i++){
-            adc_data[base_index + i + 1] = (adc2_shifted[src_channel + (i * 8)]);
-          }
-        }
-      }
-      adc_data[0] = packet_ID;
-      udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
-
-
-    }else if(adc1_second_half_ready && adc2_second_half_ready){
-      adc1_second_half_ready = 0;
-      adc2_second_half_ready = 0;
-
-
-      int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
-      int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
-      if(!a1_first){
-        adc1_shifted[0] = adc1_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
-        adc2_shifted[0] = adc2_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
-        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
-          adc1_shifted[i] = adc1_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)-1] >> 2;
-          adc2_shifted[i] = adc2_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)-1] >> 2;
-        }
-      }else{
-        adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE/2] >> 2;
-        adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE/2] >> 2;
-        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
-          adc1_shifted[i] = adc1_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)] >> 2;
-          adc2_shifted[i] = adc2_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)] >> 2;
-        }
-      }
-      const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
-      for(int channel = 0; channel < 16; channel++){
-        int src_channel = (channel < 8) ? channel : channel - 8;
-        int base_index = channel * samples_per_channel;
-
-        if(channel < 8){
-          for(int i = 0; i < samples_per_channel; i++){
-            adc_data[base_index + i + 1] = (adc1_shifted[src_channel + (i * 8)]);
-          }
-        } else {
-          for(int i = 0; i < samples_per_channel; i++){
-            adc_data[base_index + i + 1] = (adc2_shifted[src_channel + (i * 8)]);
-          }
-        }
-      }
-      adc_data[0] = packet_ID;
-      udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
-    }
 }
 
 /**
@@ -707,6 +732,67 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 8;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 255;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -725,9 +811,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 100;
+  htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 500;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -748,6 +834,126 @@ static void MX_TIM3_Init(void)
   /* USER CODE BEGIN TIM3_Init 2 */
 
   /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 3;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 255;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+  HAL_TIM_MspPostInit(&htim4);
+
+}
+
+/**
+  * @brief TIM5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM5_Init(void)
+{
+
+  /* USER CODE BEGIN TIM5_Init 0 */
+
+  /* USER CODE END TIM5_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM5_Init 1 */
+
+  /* USER CODE END TIM5_Init 1 */
+  htim5.Instance = TIM5;
+  htim5.Init.Prescaler = 3;
+  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim5.Init.Period = 255;
+  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM5_Init 2 */
+
+  /* USER CODE END TIM5_Init 2 */
+  HAL_TIM_MspPostInit(&htim5);
 
 }
 
@@ -839,6 +1045,189 @@ static void MX_TIM8_Init(void)
 }
 
 /**
+  * @brief TIM16 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM16_Init(void)
+{
+
+  /* USER CODE BEGIN TIM16_Init 0 */
+
+  /* USER CODE END TIM16_Init 0 */
+
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM16_Init 1 */
+
+  /* USER CODE END TIM16_Init 1 */
+  htim16.Instance = TIM16;
+  htim16.Init.Prescaler = 3;
+  htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim16.Init.Period = 255;
+  htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim16.Init.RepetitionCounter = 0;
+  htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_OC_ConfigChannel(&htim16, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.BreakFilter = 0;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim16, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM16_Init 2 */
+
+  /* USER CODE END TIM16_Init 2 */
+  HAL_TIM_MspPostInit(&htim16);
+
+}
+
+/**
+  * @brief TIM23 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM23_Init(void)
+{
+
+  /* USER CODE BEGIN TIM23_Init 0 */
+
+  /* USER CODE END TIM23_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM23_Init 1 */
+
+  /* USER CODE END TIM23_Init 1 */
+  htim23.Instance = TIM23;
+  htim23.Init.Prescaler = 3;
+  htim23.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim23.Init.Period = 255;
+  htim23.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim23.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim23) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim23, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim23) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim23, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim23, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim23, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim23, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM23_Init 2 */
+
+  /* USER CODE END TIM23_Init 2 */
+  HAL_TIM_MspPostInit(&htim23);
+
+}
+
+/**
+  * @brief TIM24 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM24_Init(void)
+{
+
+  /* USER CODE BEGIN TIM24_Init 0 */
+
+  /* USER CODE END TIM24_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM24_Init 1 */
+
+  /* USER CODE END TIM24_Init 1 */
+  htim24.Instance = TIM24;
+  htim24.Init.Prescaler = 3;
+  htim24.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim24.Init.Period = 255;
+  htim24.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim24.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim24) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim24, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim24, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim24, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM24_Init 2 */
+
+  /* USER CODE END TIM24_Init 2 */
+  HAL_TIM_MspPostInit(&htim24);
+
+}
+
+/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -893,25 +1282,24 @@ static void MX_DMA_Init(void)
 {
 
   /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-  /* DMA1_Stream1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
-  /* DMA1_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
-  /* DMA2_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
   /* DMA2_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
+  /* DMA2_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+  /* DMA2_Stream3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
+  /* DMA2_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
+  /* DMA2_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream5_IRQn);
 
 }
 
@@ -937,36 +1325,20 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_6|GPIO_PIN_12|GPIO_PIN_13, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_3|GPIO_PIN_15, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, TX_EN_Pin|RX_EN_REF_Pin|RX_EN_SIG_Pin|ADC_CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_3, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(PWM1_GPIO_Port, PWM1_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : PF0 PF1 PF2 PF3
-                           PF6 PF12 PF13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_6|GPIO_PIN_12|GPIO_PIN_13;
+  /*Configure GPIO pin : PF3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PA0 PA3 PA15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_3|GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : TX_EN_Pin RX_EN_REF_Pin RX_EN_SIG_Pin ADC_CS_Pin */
   GPIO_InitStruct.Pin = TX_EN_Pin|RX_EN_REF_Pin|RX_EN_SIG_Pin|ADC_CS_Pin;
@@ -975,22 +1347,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB10 PB11 PB3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_3;
+  /*Configure GPIO pin : PWM1_Pin */
+  GPIO_InitStruct.Pin = PWM1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PD12 PD13 PD14 PD15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*AnalogSwitch Config */
-  HAL_SYSCFG_AnalogSwitchConfig(SYSCFG_SWITCH_PA0, SYSCFG_SWITCH_PA0_CLOSE);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(PWM1_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -998,7 +1360,91 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void ADC_handle(){
+    if(adc1_first_half_ready && adc2_first_half_ready){
+      adc1_first_half_ready = 0;
+      adc2_first_half_ready = 0;
 
+
+      uint8_t a2_first = 0;
+
+      int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      if(!a1_first){
+        adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
+        adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE-1] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[i-1] >> 2;
+          adc2_shifted[i] = adc2_rx_data[i-1] >> 2;
+        }
+      }else{
+        adc1_shifted[0] = adc1_rx_data[0] >> 2;
+        adc2_shifted[0] = adc2_rx_data[0] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[i] >> 2;
+          adc2_shifted[i] = adc2_rx_data[i] >> 2;
+        }
+      }
+      const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
+      for(int channel = 0; channel < 16; channel++){
+        int src_channel = (channel < 8) ? channel : channel - 8;
+        int base_index = channel * samples_per_channel;
+
+        if(channel < 8){
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i + 1] = (adc1_shifted[src_channel + (i * 8)]);
+          }
+        } else {
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i + 1] = (adc2_shifted[src_channel + (i * 8)]);
+          }
+        }
+      }
+      adc_data[0] = packet_ID;
+      udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
+
+
+    }else if(adc1_second_half_ready && adc2_second_half_ready){
+      adc1_second_half_ready = 0;
+      adc2_second_half_ready = 0;
+
+
+      int16_t adc1_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      int16_t adc2_shifted[ADC_CONVERTED_DATA_BUFFER_SIZE/2];
+      if(!a1_first){
+        adc1_shifted[0] = adc1_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
+        adc2_shifted[0] = adc2_rx_data[(ADC_CONVERTED_DATA_BUFFER_SIZE/2)-1] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)-1] >> 2;
+          adc2_shifted[i] = adc2_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)-1] >> 2;
+        }
+      }else{
+        adc1_shifted[0] = adc1_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE/2] >> 2;
+        adc2_shifted[0] = adc2_rx_data[ADC_CONVERTED_DATA_BUFFER_SIZE/2] >> 2;
+        for(int i = 1; i < ADC_CONVERTED_DATA_BUFFER_SIZE/2; i++){
+          adc1_shifted[i] = adc1_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)] >> 2;
+          adc2_shifted[i] = adc2_rx_data[((ADC_CONVERTED_DATA_BUFFER_SIZE/2)+i)] >> 2;
+        }
+      }
+      const int samples_per_channel = ADC_CONVERTED_DATA_BUFFER_SIZE / 16;
+      for(int channel = 0; channel < 16; channel++){
+        int src_channel = (channel < 8) ? channel : channel - 8;
+        int base_index = channel * samples_per_channel;
+
+        if(channel < 8){
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i + 1] = (adc1_shifted[src_channel + (i * 8)]);
+          }
+        } else {
+          for(int i = 0; i < samples_per_channel; i++){
+            adc_data[base_index + i + 1] = (adc2_shifted[src_channel + (i * 8)]);
+          }
+        }
+      }
+      adc_data[0] = packet_ID;
+      udpClient_send((int16_t*)adc_data, ADC_CONVERTED_DATA_BUFFER_SIZE + 1);
+    }
+}
 /* USER CODE END 4 */
 
  /* MPU Configuration */

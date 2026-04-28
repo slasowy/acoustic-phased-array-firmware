@@ -67,6 +67,8 @@ void Error_Handler(void);
 #define RX_EN_SIG_GPIO_Port GPIOE
 #define ADC_CS_Pin GPIO_PIN_15
 #define ADC_CS_GPIO_Port GPIOE
+#define PWM1_Pin GPIO_PIN_12
+#define PWM1_GPIO_Port GPIOD
 
 /* USER CODE BEGIN Private defines */
 
