@@ -361,6 +361,60 @@ void fill_waveform_buffers(float delay_seconds)
     }
 }
 
+void Waveform_Stop(void)
+{
+    // ---- Stop TIM3 first to prevent any further DMA requests ----
+    TIM3->CR1  &= ~TIM_CR1_CEN;
+    TIM3->DIER &= ~TIM_DIER_UDE;
+
+    // ---- Disable all four DMA streams ----
+    DMA1_Stream2->CR &= ~DMA_SxCR_EN;
+    DMA1_Stream3->CR &= ~DMA_SxCR_EN;
+    DMA2_Stream2->CR &= ~DMA_SxCR_EN;
+    DMA2_Stream3->CR &= ~DMA_SxCR_EN;
+
+    // Wait for all streams to actually stop
+    while (DMA1_Stream2->CR & DMA_SxCR_EN);
+    while (DMA1_Stream3->CR & DMA_SxCR_EN);
+    while (DMA2_Stream2->CR & DMA_SxCR_EN);
+    while (DMA2_Stream3->CR & DMA_SxCR_EN);
+
+    // ---- Drive all waveform pins low via BRR (bit reset register) ----
+    // PORTA: A0, A3, A15
+    GPIOA->BSRR = PA0_CLR | PA3_CLR | PA15_CLR;
+
+    // PORTB: B3, B10, B11
+    GPIOB->BSRR = PB3_CLR | PB10_CLR | PB11_CLR;
+
+    // PORTD: D12, D13, D14, D15
+    GPIOD->BSRR = PD12_CLR | PD13_CLR | PD14_CLR | PD15_CLR;
+
+    // PORTF: F0, F1, F2, F6, F12, F13
+    GPIOF->BSRR = PF0_CLR | PF1_CLR | PF2_CLR | PF6_CLR | PF12_CLR | PF13_CLR;
+}
+
+void rx_on(){
+  HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, GPIO_PIN_RESET);
+
+  HAL_Delay(100);
+  
+  HAL_GPIO_WritePin(RX_EN_SIG_GPIO_Port, RX_EN_SIG_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(RX_EN_REF_GPIO_Port, RX_EN_REF_Pin, GPIO_PIN_SET);
+}
+
+void tx_on(){
+  HAL_GPIO_WritePin(RX_EN_SIG_GPIO_Port, RX_EN_SIG_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(RX_EN_REF_GPIO_Port, RX_EN_REF_Pin, GPIO_PIN_RESET);
+
+  HAL_Delay(100);
+
+  HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, GPIO_PIN_SET);
+}
+
+void transmit(){
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -438,12 +492,8 @@ int main(void)
 
   udpClient_connect();
   HAL_Delay(1000);
-  HAL_GPIO_WritePin(RX_EN_SIG_GPIO_Port, RX_EN_SIG_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(RX_EN_REF_GPIO_Port, RX_EN_REF_Pin, GPIO_PIN_RESET);
 
-  HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, GPIO_PIN_SET);
-
-  
+  tx_on();
 
   fill_waveform_buffers(0);   // 62.5ns between channels = 1/16MHz
   DMA_Waveform_Init();
