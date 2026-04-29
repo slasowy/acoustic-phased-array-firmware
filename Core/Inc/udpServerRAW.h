@@ -25,5 +25,6 @@
 
 void udpClient_send(int16_t* data, uint16_t len);
 void udpClient_connect(void);
+int8_t check_for_tx(float * delays);
 
 #endif /* INC_UDPCLIENTRAW_H_ */

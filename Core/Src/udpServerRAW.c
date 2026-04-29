@@ -32,11 +32,13 @@
 
 void udp_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p, const ip_addr_t *addr, u16_t port);
 
+volatile float delays[16];
+volatile uint8_t packet_is_delays;
+
 struct udp_pcb *upcb;
 char buffer[100];
 int cnt = 0;
 
-extern TIM_HandleTypeDef htim3;
 
 // void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 // {
@@ -57,6 +59,21 @@ extern TIM_HandleTypeDef htim3;
 */
 
 
+int parse_buffer(const char *buffer, size_t buffer_len, volatile float out[16])
+{
+    if (buffer_len < 1 + 16 * sizeof(float))
+        return -1;
+
+    if (buffer[0] != 0x67)
+        return -1;
+
+    for (int i = 0; i < 16; i++) {
+        memcpy(&out[i], &buffer[1 + i * sizeof(float)], sizeof(float));
+    }
+
+    return 0;
+}
+
 void udpClient_connect(void)
 {
 	err_t err;
@@ -67,7 +84,7 @@ void udpClient_connect(void)
 	/* Bind the block to module's IP and port */
 	ip_addr_t myIPaddr;
 	IP_ADDR4(&myIPaddr, 192, 168, 0, 123);
-	udp_bind(upcb, &myIPaddr, 6666);
+	udp_bind(upcb, &myIPaddr, 7777);
 
 
 	/* configure destination IP address and port */
@@ -80,7 +97,7 @@ void udpClient_connect(void)
 		/* 2. Send message to server */
 
 		/* 3. Set a receive callback for the upcb */
-		//udp_recv(upcb, udp_receive_callback, NULL);
+		udp_recv(upcb, udp_receive_callback, NULL);
 	}
 }
 
@@ -110,13 +127,21 @@ void udpClient_connect(void)
 void udp_receive_callback(void *arg, struct udp_pcb *upcb, struct pbuf *p, const ip_addr_t *addr, u16_t port)
 {
 	/* Copy the data from the pbuf */
-	strncpy (buffer, (char *)p->payload, p->len);
+	strncpy(buffer, (char *)p->payload, p->len);
 
 	/*increment message count */
 	cnt++;
-
+  if(buffer[0] == 0x67){
+    packet_is_delays = 1;
+  }
 	/* Free receive pbuf */
 	pbuf_free(p);
 }
 
+int8_t check_for_tx(float* delays){
+  if(!packet_is_delays) return -1;
+  packet_is_delays = 0;
+
+  parse_buffer(buffer, sizeof(buffer), delays);
+}
 
